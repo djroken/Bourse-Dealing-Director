@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Agent, type Mode, DEFAULT_SETUP, LBL, PERP, SEED_AGENTS, SETUP_KEY, type Setup } from "./data";
 import { fmt, fmtQty } from "./format";
+import { VENUE_STEP, persistable } from "./onboarding";
 import { fetchCloses, fetchEurUsd, fetchFundingRate, fetchQuotes } from "./market";
 import {
   type DeskState, type Fill, type Filter, type MobileTab, type Tab,
@@ -52,6 +53,7 @@ function hydrate(base: DeskState): DeskState {
   const sysDark = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)").matches : true;
   return {
     ...base, setup, theme, sysDark,
+    setupNotice: !setup.done,
     glassAlpha: ga > 0 && ga <= 1 ? ga : DEFAULT_GLASS_ALPHA,
     vw: typeof window !== "undefined" ? window.innerWidth : base.vw,
   };
@@ -99,6 +101,11 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [patch]);
+
+  // ---- persist setup (secrets stay in memory; see persistable) ----------------
+  useEffect(() => {
+    writeStorage(SETUP_KEY, JSON.stringify(persistable(s.setup)));
+  }, [s.setup]);
 
   // ---- simulation tick -----------------------------------------------------
   useEffect(() => {
@@ -225,10 +232,32 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
         patch((st) =>
           venuesReady(st.setup).length
             ? { confirmLive: false, mode: "live" as Mode }
-            : { confirmLive: false, setupNotice: true },
+            : { confirmLive: false, setupNotice: true, onbStep: VENUE_STEP },
         ),
-      openSetup: () => patch({ setupNotice: true }),
-      closeSetup: () => patch({ setupNotice: false }),
+      openSetup: () => patch({ setupNotice: true, onbStep: 0 }),
+      closeSetup: () => patch((st) => ({ setupNotice: false, setup: st.setup.done ? st.setup : { ...st.setup, done: true } })),
+      setOnbStep: (onbStep: number) => patch({ onbStep }),
+      updSetup: (fn: (su: Setup) => void) =>
+        patch((st) => {
+          const su: Setup = {
+            ...st.setup, on: { ...st.setup.on }, vals: { ...st.setup.vals }, agentsOn: st.setup.agentsOn.slice(),
+          };
+          fn(su);
+          return { setup: su };
+        }),
+      resetSetup: () =>
+        patch({
+          setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
+          onbStep: 0,
+        }),
+      /** Finish onboarding. Live still goes through the confirm modal (and venue check). */
+      launch: (live: boolean) =>
+        patch((st) => ({
+          setupNotice: false,
+          setup: { ...st.setup, done: true },
+          mode: "demo" as Mode,
+          confirmLive: live && venuesReady(st.setup).length > 0,
+        })),
 
       patchSel,
       pauseSel: () =>

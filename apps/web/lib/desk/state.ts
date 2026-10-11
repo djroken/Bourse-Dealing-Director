@@ -55,6 +55,8 @@ export interface DeskState {
   mode: Mode;
   confirmLive: boolean;
   setupNotice: boolean;
+  /** Current onboarding step (0-5) while the setup overlay is open. */
+  onbStep: number;
   chartSrc: "tv" | "native";
   chartSym: string;
   live: Record<string, Quote>;
@@ -105,7 +107,7 @@ export function createInitialState(now: number): DeskState {
     ),
     centerOpen: true, tab: "chat", mTab: "floor", sel: null, filter: "ALL", draft: "", halted: false,
     setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
-    mode: "demo", confirmLive: false, setupNotice: false,
+    mode: "demo", confirmLive: false, setupNotice: false, onbStep: 0,
     chartSrc: "tv", chartSym: "BTCUSDT",
     live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false,
     seq, fills: makeFills(live, now),

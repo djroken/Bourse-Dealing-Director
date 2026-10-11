@@ -8,6 +8,7 @@ import Footer from "./Footer";
 import Header from "./Header";
 import Mobile from "./Mobile";
 import Modals from "./Modals";
+import Onboarding from "./Onboarding";
 import RightRail from "./RightRail";
 import Roster from "./Roster";
 
@@ -40,6 +41,7 @@ function DeskInner() {
       )}
       <AgentDrawer v={v} a={a} />
       <Modals s={s} v={v} a={a} />
+      {s.setupNotice && <Onboarding s={s} v={v} a={a} />}
     </div>
   );
 }
