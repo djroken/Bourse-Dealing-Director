@@ -501,11 +501,9 @@ a:hover {
 .hz-chips {
   flex: none;
   min-width: 0;
-  max-width: 60%;
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
-  overflow-x: auto;
-  padding-bottom: 1px;
 }
 .hz-chip {
   flex: none;
@@ -1431,4 +1429,14 @@ a:hover {
 .hz-onb-card[data-soon="true"] {
   opacity: 0.55;
   cursor: default;
+}
+
+/* Roster header wraps instead of clipping the filter chips when the panel is narrow. */
+.hz-roster > .hz-panel-head {
+  height: auto;
+  min-height: 38px;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }

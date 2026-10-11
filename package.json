@@ -9,8 +9,9 @@
     "url": "git+https://github.com/djroken/Hermes-Trading-Floor.git"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13"
   },
+  "packageManager": "pnpm@11.0.9",
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -26,7 +27,8 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "lint": "pnpm -r --if-present lint",
     "test": "pnpm -r --if-present test",
-    "check": "pnpm typecheck && pnpm lint && pnpm test"
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "watch:core": "pnpm --filter core watch"
   },
   "devDependencies": {
     "concurrently": "^10.0.5"

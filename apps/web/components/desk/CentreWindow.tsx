@@ -58,7 +58,7 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
         </div>
       </div>
       <div className="hz-sim" role="note">
-        SIMULATED FLOOR · agents are scripted and fills are paper. Prices are real. Nothing here is advice.
+        SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice
       </div>
 
       {s.tab === "chat" && (

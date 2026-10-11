@@ -1,50 +1,118 @@
 # Hermes Trading Floor
 
-A plug‑and‑play AI‑agent trading desk that can run standalone or be driven by external agents via Hermes's MCP server and REST API.
+[![CI](https://github.com/djroken/Hermes-Trading-Floor/actions/workflows/ci.yml/badge.svg)](https://github.com/djroken/Hermes-Trading-Floor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Stack
-- **Monorepo** (pnpm workspaces)
-  - `apps/web`: Next.js 15 + React + TypeScript (UI)
-  - `apps/core`: Node 20 + TypeScript + Fastify (market data, agent engine, MCP server)
-  - `packages/shared`: Shared TypeScript schemas and utilities
-- **Data**: SQLite via Drizzle (local), Postgres optional; Redis optional for pub/sub.
-- **Real‑time**: WebSocket for market data and floor events.
-- **Theming**: IBM Plex Sans + IBM Plex Mono; dark, light, system, glass themes.
+**An agentic trading desk: a floor of AI agents you watch, instruct and approve.**
 
-## Quick Start
+> **Early prototype. Paper trading only. Not financial advice.**
+> Hermes cannot place real orders: there is no exchange integration, and Live mode is deliberately switched off.
+> The agents on the desk today are scripted, and the numbers they trade are simulated. See [What works today](#what-works-today).
 
-1. **Install dependencies**
-   ```bash
-   pnpm install
-   ```
+![The Hermes desk](docs/screenshots/desk-dark.png)
 
-2. **Start the stack**
-   ```bash
-   pnpm dev
-   ```
-   This runs:
-   - `apps/web` (Next.js dev server on http://localhost:3000)
-   - `apps/core` (Fastify server on http://localhost:4000)
-   - `packages/shared` (watch build)
+## What it is
 
-3. **Environment**
-   Copy `.env.example` to `.env` and fill in API keys for market data feeds and any LLM providers you wish to use.
+Hermes is a desk staffed by eight agent seats (Dealing Director, Execution Trader, Market Maker, Quant, Research, On-chain, Risk Officer, Sentiment). You watch them talk, give them instructions, and approve or reject the trades they propose. Each seat has its own model, autonomy level, mandate and risk limits.
 
-## Project Structure
+The idea is a desk you can run on its own, or plug your own agents into. The pieces are here to build toward that. Only some of them are connected yet.
+
+## What works today
+
+| | Status | Notes |
+|---|---|---|
+| Desk UI: roster, floor chat, blotter, console, chart rail, agent drawer | **Working** | Dark, light, system and glass themes; responsive down to phones |
+| Approvals queue | **Working** | SUGGEST and APPROVE agents send trades to the queue; AUTO agents fill immediately (paper) |
+| Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets you type stay in memory only |
+| Market prices and candles | **Real** | Fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed |
+| Agents, floor chat, fills, P&L | **Simulated** | A scripted conversation over seeded positions. The desk says so on screen |
+| News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
+| Hermes Core (`apps/core`) | **Working, not connected to the desk** | Market-data feed, a stub agent engine with a hard risk gate, HTTP and WebSocket API. Tested, but the desk doesn't use it yet. See [docs/core-api.md](docs/core-api.md) |
+| Real model calls, MCP server, runtime adapters | Planned | |
+| Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
+
+## Quick start
+
+You need [Node.js](https://nodejs.org) 22.13 or newer and [pnpm](https://pnpm.io/installation) 11 (`corepack enable` sets it up from the repo's `packageManager` field).
+
+```bash
+git clone https://github.com/djroken/Hermes-Trading-Floor.git
+cd Hermes-Trading-Floor
+pnpm install
+pnpm dev
 ```
-hermes-trading-floor/
-├─ apps/
-│  ├─ web/          # Next.js UI
-│  └─ core/         # Fastify backend
-├─ packages/
-│  └─ shared/       # TypeScript schemas, agent seed
-├─ .hermes/
-│  └─ plans/        # Implementation plan
-└─ ...
+
+- Desk: http://localhost:3000 (the setup flow opens on first run; skip it to go straight to the desk)
+- Core: http://localhost:4000 (try `curl localhost:4000/agents`)
+
+To watch the agent floor stream from core: `pnpm watch:core`.
+
+Configuration is optional and lives in environment variables; see [.env.example](.env.example).
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `pnpm dev` | Desk and core together |
+| `pnpm dev:web` / `pnpm dev:core` | One at a time |
+| `pnpm check` | Typecheck, lint and unit tests for every package |
+| `pnpm build` | Production build of the desk |
+| `pnpm --filter web test:e2e` | Browser tests (build the desk first; needs `pnpm --filter web exec playwright install chromium` once) |
+
+## How it fits together
+
+```mermaid
+flowchart LR
+  subgraph Browser
+    D[Desk UI<br/>Next.js]
+    S[Simulated floor<br/>scripted agents]
+  end
+  P[(Public price APIs<br/>Binance · Coinbase<br/>Hyperliquid · Frankfurter)]
+  subgraph Core[Hermes Core · Fastify]
+    F[Feed poller]
+    E[Agent engine<br/>+ risk gate]
+  end
+  D --- S
+  D -- prices, candles --> P
+  F -- prices, funding --> P
+  F --> E
+  E -- "WebSocket /agents" -.-> X[Not connected to the desk yet]
+  X -.-> D
 ```
 
-## Next Steps
-See `.hermes/plans/plan.md` for detailed milestones and implementation plan.
+- `apps/web`: the desk (Next.js, React, TypeScript, Tailwind). Everything you see runs in the browser today.
+- `apps/core`: the market-data feed and agent engine, served over HTTP and WebSocket (Fastify). Runs on its own.
+- `packages/shared`: the zod schemas and default agent roster both sides share.
 
-## License
-MIT
+## Safety
+
+- **No real orders.** Nothing in this repository can send an order to an exchange or move funds.
+- **Core has no authentication.** It binds to `127.0.0.1` by default, checks the browser `Origin` on WebSocket connections and state-changing requests, and warns if you expose it. Don't put it on a network without adding authentication in front of it.
+- **Secrets stay local.** Anything you type into the setup flow is kept in memory in your browser tab, never written to storage and never sent anywhere. There is no server-side key store yet, which is one reason Live trading is off.
+- **The risk gate fails closed.** Core vetoes an AUTO decision once an agent's daily loss reaches its stop, and treats bad input as a veto. It is covered by tests.
+- **Data comes from third parties.** Prices are fetched from public endpoints you don't control, and can be wrong, late or unavailable. The desk labels the feed it is using and says when it has fallen back to simulated prices.
+
+Found a security problem? See [SECURITY.md](SECURITY.md).
+
+## Roadmap
+
+- [x] Desk UI, themes, approvals queue, setup flow
+- [x] Core: market-data feed, stub agent engine, risk gate, tests
+- [ ] Connect the desk to Core's WebSocket, so the roster, chat and fills come from the engine
+- [ ] Reconcile the desk's agent roster with `packages/shared`
+- [ ] Real model calls per agent (provider adapters) behind the same risk gate
+- [ ] Server-side encrypted key storage
+- [ ] MCP server so external agents can drive the desk
+- [ ] Execution layer and venue adapters, then Live mode
+
+## Contributing
+
+Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Disclaimer
+
+Hermes is software for experimentation. It is not financial, investment or legal advice, and nothing it displays is a recommendation to buy or sell anything. The agents are stubs and the simulated figures are not real. If you build on it to trade real money, you do so entirely at your own risk and are responsible for the code you run.
+
+## Licence
+
+[MIT](LICENSE)

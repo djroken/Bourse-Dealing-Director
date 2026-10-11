@@ -14,6 +14,24 @@ test("renders the roster and labels the floor as simulated", async ({ page, erro
   expect(errors).toEqual([]);
 });
 
+test("every roster filter chip is fully visible, not clipped", async ({ page }) => {
+  const chips = page.locator(".hz-roster .hz-chip");
+  await expect(chips).toHaveCount(5);
+  // No horizontal scroll inside the chip row, and every chip sits inside the panel.
+  const overflow = await page.locator(".hz-roster .hz-chips").evaluate((el) => el.scrollWidth - el.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
+  const panel = (await page.locator(".hz-roster").boundingBox())!;
+  for (let i = 0; i < 5; i++) {
+    const box = (await chips.nth(i).boundingBox())!;
+    expect(box.x + box.width, `chip ${i}`).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+  }
+});
+
+test("the simulated-floor strip fits on one line", async ({ page }) => {
+  const h = await page.locator(".hz-sim").evaluate((el) => el.getBoundingClientRect().height);
+  expect(h).toBeLessThan(32);
+});
+
 test("roster filter narrows and restores", async ({ page }) => {
   await page.locator(".hz-chip", { hasText: "RISK" }).click();
   await expect(page.locator(".hz-agent")).toHaveCount(1);
