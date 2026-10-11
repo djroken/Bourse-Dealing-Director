@@ -29,7 +29,7 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Floor chat, fills, approvals | **Core's stub agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule (not AI models); AUTO seats fill on the paper venue, SUGGEST/APPROVE seats send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
-| Hermes Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, a stub agent engine with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
+| Hermes Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, an agent engine (stub rules, or Ollama/OpenRouter models that only suggest) with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
 | Real model calls, MCP server, runtime adapters | Planned | |
 | Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
 
@@ -104,8 +104,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] One agent roster shared by desk and core
 - [x] Roster P&L and positions from core's paper book; approvals executed by core
 - [x] Push agent-drawer edits (autonomy, pause, model, temperature, mandate) to core; limits stay read-only on purpose
-- [ ] Real model calls per agent (provider adapters) behind the same risk gate
-- [x] Server-side encrypted key storage (nothing consumes it yet)
+- [x] Real model calls per agent: Ollama (local), OpenRouter (any model) and OpenRouter free. Suggest-only, behind the same risk gate
+- [ ] Anthropic, OpenAI and Gemini adapters
+- [x] Server-side encrypted key storage (the OpenRouter adapter reads its key from it)
 - [ ] MCP server so external agents can drive the desk
 - [ ] Execution layer and venue adapters, then Live mode
 
@@ -115,7 +116,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Disclaimer
 
-Hermes is software for experimentation. It is not financial, investment or legal advice, and nothing it displays is a recommendation to buy or sell anything. The agents are stubs and the simulated figures are not real. If you build on it to trade real money, you do so entirely at your own risk and are responsible for the code you run.
+Hermes is software for experimentation. It is not financial, investment or legal advice, and nothing it displays is a recommendation to buy or sell anything. By default the agents are stub rules, not AI, and the simulated figures are not real. Model-backed seats only suggest, and what a model says is not advice. If you build on it to trade real money, you do so entirely at your own risk and are responsible for the code you run.
 
 ## Licence
 

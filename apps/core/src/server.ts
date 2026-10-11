@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import type { Duplex } from 'node:stream';
 import { WebSocket, WebSocketServer } from 'ws';
 import type { CoreConfig } from './config';
+import { createAdvisor } from './models';
 import { createEngine, type Engine, type Logger } from './engine';
 import { fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
@@ -30,7 +31,13 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     }
   });
   const log: Logger = { info: (m) => server.log.info(m), warn: (m) => server.log.warn(m) };
-  const engine = deps.engine ?? createEngine({ log });
+  const advisor = createAdvisor({
+    ollamaHost: config.ollamaHost,
+    dailyCap: config.modelDailyCap,
+    // Read at call time: a key saved in Setup works without a restart. The env var is the fallback.
+    openrouterKey: () => secrets?.get('model.openrouter.key') ?? (process.env.OPENROUTER_API_KEY?.trim() || undefined),
+  });
+  const engine = deps.engine ?? createEngine({ log, advisor });
   const feedDeps: FeedDeps = deps.feedDeps ?? { fetchJson: (url, init) => fetchJson(url, { init }), now: Date.now };
 
   const originAllowed = (origin: string | undefined): boolean =>
@@ -77,6 +84,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   // ---- secrets: write-only over HTTP. Values are never returned, only that they exist. -------------------------------
   const secrets = deps.secrets ?? (config.masterKey ? openSecretStore({ file: join(config.dataDir, 'secrets.json'), key: parseMasterKey(config.masterKey) }) : undefined);
   const disabled = { error: 'secret store disabled: start core with HERMES_MASTER_KEY set (pnpm --filter core keygen)' };
+  server.get('/models', async () => advisor.status());
   server.get('/secrets', async () => ({ enabled: !!secrets, secrets: secrets?.list() ?? [] }));
   server.put<{ Params: { id: string }; Body: { value?: unknown } }>('/secrets/:id', async (req, reply) => {
     if (!secrets) return reply.code(503).send(disabled);

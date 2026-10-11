@@ -90,6 +90,26 @@ Messages you may send (anything else is ignored; frames over 16 KiB close the co
 
 Watch the stream from a terminal: `pnpm watch:core`.
 
+## Real models
+
+By default every seat runs a stub momentum rule, not an AI. Set a seat's model id (drawer, or `configure_agent`) to use a real model:
+
+| Model id | Provider | Cost |
+|---|---|---|
+| `ollama:<name>` e.g. `ollama:llama3.2` | Local Ollama at `OLLAMA_HOST` (default `http://127.0.0.1:11434`) | Free |
+| `openrouter-free:<id>` e.g. `openrouter-free:meta-llama/llama-3.3-70b-instruct:free` | OpenRouter; refuses any id not ending in `:free` | Free (OpenRouter's free-tier limits apply) |
+| `openrouter:<id>` | OpenRouter, any model | **Whatever OpenRouter charges** |
+
+The OpenRouter key is read from the secret store (`model.openrouter.key`, saved from Setup) or `OPENROUTER_API_KEY`.
+
+Rules that hold whatever the model says:
+- **Suggest-only.** A model seat ends at an `intent` even when its autonomy is AUTO; a human approves it (`place_order`) and the risk gate still applies.
+- **Core sizes the order.** The model returns only `side`, `confidence` and a one-sentence rationale, validated against a strict schema. Anything else in its reply (a size, a symbol) is ignored; a bad reply counts as a failure.
+- **Failure falls back** to the stub rule, with the reason in the intent's rationale, and is still suggest-only.
+- **Throttled.** One call per seat and symbol per 5 minutes, never overlapping, and a daily cap per provider (`OPENROUTER_DAILY_CAP`, default 200; `OLLAMA_DAILY_CAP`, default unlimited; 0 = unlimited). Replies that arrive after a halt, pause or model change are dropped.
+
+`GET /models` returns `{ ollama: { host, used, cap }, openrouter: { keySet, used, cap } }` (never the key).
+
 ## Origin policy
 
 Core is meant to be driven by the local web app only.
