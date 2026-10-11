@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hermes Trading Floor — Architecture Diagram</title>
+  <style>
+    body { 
+      margin: 0; 
+      padding: 2rem; 
+      font-family: 'IBM Plex Mono', monospace;
+      background: transparent;
+      color: var(--foreground);
+    }
+    .diagram { 
+      background: var(--card); 
+      border: 1px solid var(--border); 
+      border-radius: 8px; 
+      padding: 1.5rem; 
+      max-width: 900px; 
+      margin: 0 auto;
+    }
+    .section { 
+      margin-bottom: 1.5rem; 
+      padding-bottom: 1rem; 
+      border-bottom: 1px solid var(--border);
+    }
+    .section:last-child { 
+      margin-bottom: 0; 
+      padding-bottom: 0; 
+      border-bottom: none;
+    }
+    .title { 
+      font-size: 1.25rem; 
+      font-weight: 500; 
+      margin-bottom: 0.5rem; 
+      color: var(--accent);
+    }
+    .flow { 
+      display: flex; 
+      gap: 2rem; 
+      flex-wrap: wrap; 
+      justify-content: center;
+    }
+    .box { 
+      background: var(--card); 
+      border: 1px solid var(--border); 
+      border-radius: 8px; 
+      padding: 1rem 1.25rem; 
+      min-width: 180px;
+    }
+    .box h3 { 
+      font-size: 0.875rem; 
+      font-weight: 500; 
+      margin: 0 0 0.5rem 0; 
+      color: var(--muted-foreground);
+    }
+    .box p { 
+      font-size: 0.75rem; 
+      margin: 0; 
+      color: var(--muted-foreground);
+    }
+    .arrow { 
+      width: 40px; 
+      text-align: center; 
+      font-size: 0.75rem; 
+      color: var(--muted-foreground);
+    }
+    .label { 
+      font-size: 0.7rem; 
+      color: var(--muted-foreground); 
+      margin-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="diagram">
+    <div class="section">
+      <div class="title">Hermes Trading Floor v0.9</div>
+      <div class="flow">
+        <!-- Web UI -->
+        <div class="box">
+          <h3>Web UI (:3000)</h3>
+          <p>Next.js 15 + React + TS</p>
+          <p class="label">IBM Plex Sans/Mono theming</p>
+          <p class="label">Dark / Light / System / Glass</p>
+        </div>
+
+        <!-- Agent Feed WS -->
+        <div class="box">
+          <h3>WS :4000/agents</h3>
+          <p>Agent Engine (in-process)</p>
+          <p class="label">8 agents (TKT-001..008)</p>
+          <p class="label">AUTO: intent + decision</p>
+          <p class="label">SUGGEST: intent only</p>
+        </div>
+
+        <!-- Core Server -->
+        <div class="box">
+          <h3>Core (:4000)</h3>
+          <p>Fastify + WS + SQLite (Drizzle)</p>
+          <p class="label">Market data feed (5s cadence)</p>
+          <p class="label">/feeds endpoint</p>
+          <p class="label">Risk limits enforced</p>
+        </div>
+
+        <!-- Market Data -->
+        <div class="box">
+          <h3>WS :4000/feeds</h3>
+          <p>Price + funding ticks</p>
+          <p class="label">Binance / Coinbase / FX</p>
+          <p class="label">6 symbols, 4 sources</p>
+        </div>
+
+        <!-- Flow arrows -->
+        <div class="arrow">↓</div>
+        <div class="arrow">↓</div>
+        <div class="arrow">↓</div>
+
+        <!-- External MCP -->
+        <div class="box">
+          <h3>MCP Bridge (optional)</h3>
+          <p>External agents (Claude/OpenClaw)</p>
+          <p class="label">WS ↔ JSON-RPC bridge</p>
+          <p class="label">intent / decision / HALT ALL</p>
+          <p class="label">risk limits enforced</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Key -->
+    <div class="section">
+      <div class="title">Legend</div>
+      <div style="display: flex; gap: 2rem; align-items: baseline;">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="width: 16px; height: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 4px;"></span>
+          <span>UI layer</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="width: 16px; height: 16px; background: var(--background); border: 1px solid var(--border); border-radius: 4px;"></span>
+          <span>WS protocol</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span style="width: 16px; height: 16px; color: var(--accent);"></span>
+          <span>Critical flow</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

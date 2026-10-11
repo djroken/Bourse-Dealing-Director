@@ -1,0 +1,28 @@
+{
+  "name": "hermes-trading-floor",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "11.0.9",
+      "onFail": "download"
+    }
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:core": "pnpm --filter core dev",
+    "dev:shared": "pnpm --filter shared build --watch",
+    "dev": "concurrently \"pnpm dev:web\" \"pnpm dev:core\" \"pnpm dev:shared\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}

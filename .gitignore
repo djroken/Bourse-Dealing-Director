@@ -1,0 +1,28 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+.next/
+out/
+dist/
+build/
+.coverage/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.*
+
+# Misc
+.DS_Store
+Thumbs.db
+logs
+*.pid
+*.seed
+
+# Hermes specific
+.hermes/
