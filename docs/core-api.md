@@ -10,6 +10,8 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 |---|---|---|
 | `CORE_HOST` | `127.0.0.1` | Interface to bind. Leave on loopback unless you add your own auth and TLS in front. |
 | `CORE_PORT` | `4000` | Port. |
+| `HERMES_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64). Enables the secret store. `pnpm --filter core keygen` makes one. |
+| `HERMES_DATA_DIR` | `.hermes` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
 
 ## HTTP
@@ -22,8 +24,13 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/agents/:id` | One agent summary, or `404 { "error": "not found" }` |
 | POST | `/agents/halt-all` | `{ "ok": true, "halted": <n> }`: stops every agent from deciding |
 | POST | `/agents/resume-all` | `{ "ok": true, "resumed": <n> }` |
+| GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
+| PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
+| DELETE | `/secrets/:id` | Removes it, `404` if absent |
 
 An agent summary has: `id, name, role, model, temperature, autonomy ("SUGGEST"|"APPROVE"|"AUTO"), state, mandate, riskLimits, tools, feeds, dailyPnL`.
+
+Secret ids match `[A-Za-z0-9][A-Za-z0-9._-]{0,63}`; the web app uses ids like `runtime.claude.key`. **There is deliberately no endpoint that returns a value.** Each value is encrypted with AES-256-GCM using a fresh IV and its id as authenticated data; core refuses to start if the master key doesn't match the existing file.
 
 ```sh
 curl -s localhost:4000/agents | head -c 400

@@ -23,7 +23,8 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 |---|---|---|
 | Desk UI: roster, floor chat, blotter, console, chart rail, agent drawer | **Working** | Dark, light, system and glass themes; responsive down to phones |
 | Approvals queue | **Working** | SUGGEST and APPROVE agents send trades to the queue; AUTO agents fill immediately (paper) |
-| Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets you type stay in memory only |
+| Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets stay in memory unless you save them to core's encrypted store |
+| Encrypted key store (core) | **Working, nothing consumes it yet** | AES-256-GCM at rest, write-only over HTTP. Needs `HERMES_MASTER_KEY` |
 | Market prices and candles | **Real** | Fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed |
 | Agents, floor chat, fills, P&L | **Simulated** | A scripted conversation over seeded positions. The desk says so on screen |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
@@ -88,7 +89,7 @@ flowchart LR
 
 - **No real orders.** Nothing in this repository can send an order to an exchange or move funds.
 - **Core has no authentication.** It binds to `127.0.0.1` by default, checks the browser `Origin` on WebSocket connections and state-changing requests, and warns if you expose it. Don't put it on a network without adding authentication in front of it.
-- **Secrets stay local.** Anything you type into the setup flow is kept in memory in your browser tab, never written to storage and never sent anywhere. There is no server-side key store yet, which is one reason Live trading is off.
+- **Secrets.** Anything you type into the setup flow is kept in memory in your browser tab and never written to browser storage. If you run core with `HERMES_MASTER_KEY` set, you can save a key to core's store: it is encrypted at rest (AES-256-GCM), the master key never touches disk, and the API can write and delete keys but never read them back. Nothing uses the stored keys yet, because there are no model or exchange integrations. Core has no login, so keep it on localhost.
 - **The risk gate fails closed.** Core vetoes an AUTO decision once an agent's daily loss reaches its stop, and treats bad input as a veto. It is covered by tests.
 - **Data comes from third parties.** Prices are fetched from public endpoints you don't control, and can be wrong, late or unavailable. The desk labels the feed it is using and says when it has fallen back to simulated prices.
 
@@ -101,7 +102,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [ ] Connect the desk to Core's WebSocket, so the roster, chat and fills come from the engine
 - [ ] Reconcile the desk's agent roster with `packages/shared`
 - [ ] Real model calls per agent (provider adapters) behind the same risk gate
-- [ ] Server-side encrypted key storage
+- [x] Server-side encrypted key storage (nothing consumes it yet)
 - [ ] MCP server so external agents can drive the desk
 - [ ] Execution layer and venue adapters, then Live mode
 

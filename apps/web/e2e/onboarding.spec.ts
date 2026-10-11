@@ -108,3 +108,62 @@ test("on mobile the step rail is hidden and nothing overflows sideways", async (
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test.describe("saving keys to core", () => {
+  const CORE = "http://127.0.0.1:4000";
+  const KEY_ID = "runtime.claude.key";
+
+  test("a key goes to core, leaves the page, and is never stored in the browser", async ({ page }) => {
+    const stored = new Set<string>();
+    const puts: Array<{ url: string; body: string }> = [];
+    await page.route(`${CORE}/secrets**`, async (route) => {
+      const req = route.request();
+      const cors = { "access-control-allow-origin": "*", "access-control-allow-methods": "GET,PUT,DELETE", "access-control-allow-headers": "content-type" };
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204, headers: cors });
+      if (req.method() === "PUT") {
+        puts.push({ url: req.url(), body: req.postData() ?? "" });
+        stored.add(decodeURIComponent(req.url().split("/secrets/")[1]!));
+        return route.fulfill({ status: 200, headers: cors, json: { ok: true } });
+      }
+      if (req.method() === "DELETE") {
+        stored.delete(decodeURIComponent(req.url().split("/secrets/")[1]!));
+        return route.fulfill({ status: 200, headers: cors, json: { ok: true } });
+      }
+      return route.fulfill({ status: 200, headers: cors, json: { enabled: true, secrets: [...stored].map((id) => ({ id, updatedAt: 1 })) } });
+    });
+
+    await openDesk(page);
+    await page.locator(".hz-onb-card", { hasText: "Claude" }).first().click();
+    const row = page.getByTestId(`secret-${KEY_ID}`);
+    await expect(row.getByRole("button", { name: "SAVE TO CORE" })).toBeDisabled(); // nothing typed yet
+    await page.locator(".hz-onb-card[aria-checked=true] input").fill("sk-ant-TOPSECRET123");
+    await row.getByRole("button", { name: "SAVE TO CORE" }).click();
+
+    await expect(row).toContainText("SAVED IN CORE");
+    expect(puts).toHaveLength(1);
+    expect(puts[0]!.url).toContain(`/secrets/${KEY_ID}`);
+    expect(JSON.parse(puts[0]!.body)).toEqual({ value: "sk-ant-TOPSECRET123" });
+    await expect(page.locator(".hz-onb-card[aria-checked=true] input")).toHaveValue(""); // cleared from the page
+    expect(await page.evaluate(() => JSON.stringify({ ...localStorage, ...sessionStorage }))).not.toContain("TOPSECRET");
+
+    await row.getByRole("button", { name: "REMOVE" }).click();
+    await expect(row.getByRole("button", { name: "SAVE TO CORE" })).toBeVisible();
+    expect(stored.size).toBe(0);
+  });
+
+  test("with core down, the field says the key stays in this tab only", async ({ page }) => {
+    await openDesk(page);
+    await page.locator(".hz-onb-card", { hasText: "Claude" }).first().click();
+    await expect(page.getByTestId(`secret-${KEY_ID}`)).toContainText("Core isn't running");
+    await expect(page.getByRole("button", { name: "SAVE TO CORE" })).toHaveCount(0);
+  });
+
+  test("with the store disabled, it explains how to turn it on", async ({ page }) => {
+    await page.route(`${CORE}/secrets`, (route) =>
+      route.fulfill({ status: 200, headers: { "access-control-allow-origin": "*" }, json: { enabled: false, secrets: [] } }),
+    );
+    await openDesk(page);
+    await page.locator(".hz-onb-card", { hasText: "Claude" }).first().click();
+    await expect(page.getByTestId(`secret-${KEY_ID}`)).toContainText("HERMES_MASTER_KEY");
+  });
+});

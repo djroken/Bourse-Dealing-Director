@@ -13,11 +13,12 @@ Include what you found, how to reproduce it, and the impact you expect. This is 
 ## In scope
 
 - Anything that lets a web page or remote host drive `core` despite the Origin policy or loopback default
-- Secrets (API keys typed into Setup) being persisted or leaked by the web app
+- Secrets (API keys typed into Setup) being persisted, logged or returned by the web app or core
+- Weaknesses in the secret store's encryption
 - Any path that could route a real order while Live mode is unavailable
 
 ## Known limitations (not vulnerabilities)
 
 - `core` has no authentication; do not expose it to a network.
-- There is no server-side key store yet. Keys entered in Setup are held in browser memory for the tab only and are never written to `localStorage`.
+- Keys entered in Setup are held in browser memory and never written to `localStorage`. Core can store them encrypted (AES-256-GCM, master key from `HERMES_MASTER_KEY`), but it has no login, so anyone who can reach it on your machine can overwrite or delete stored keys (never read them). The encrypted file protects against someone copying the disk, not against malware running as you.
 - Agents are scripted; there is no model or exchange integration.

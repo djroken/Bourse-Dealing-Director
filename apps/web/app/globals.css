@@ -1440,3 +1440,10 @@ a:hover {
   padding-top: 6px;
   padding-bottom: 6px;
 }
+
+/* Secret fields: where the key lives, and a way to move it into core's encrypted store. */
+.hz-onb-fieldwrap { display: flex; flex-direction: column; gap: 5px; }
+.hz-onb-secret { display: flex; align-items: center; gap: 10px; min-height: 26px; }
+.hz-onb-secret .hz-btn { margin-left: auto; flex: none; }
+.hz-onb-secret-note { font-size: 11.5px; line-height: 1.4; color: var(--c6B7681); }
+.hz-onb-secret-ok { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: var(--c3ECF8E); }

@@ -9,6 +9,8 @@ import {
 import { venuesReady, type DeskState } from "@/lib/desk/state";
 import type { DeskView } from "@/lib/desk/view";
 import type { DeskActions } from "@/lib/desk/useDesk";
+import type { CoreSecrets } from "@/lib/desk/useCoreSecrets";
+import { useCoreSecrets } from "@/lib/desk/useCoreSecrets";
 import { ThemeSwitch } from "./Footer";
 import { m } from "./ui";
 
@@ -29,7 +31,7 @@ function Check({ on, radio }: { on: boolean; radio?: boolean }) {
   );
 }
 
-function ItemCard({ st, it, s, a }: { st: OnbStep; it: OnbItem; s: DeskState; a: DeskActions }) {
+function ItemCard({ st, it, s, a, core }: { st: OnbStep; it: OnbItem; s: DeskState; a: DeskActions; core: CoreSecrets }) {
   const soon = !!it.soon && !LIVE_AVAILABLE;
   const on = soon ? false : st.single ? s.setup.runtime === it.id : it.locked || !!s.setup.on[keyOf(st, it)];
   const toggle = () => {
@@ -70,7 +72,8 @@ function ItemCard({ st, it, s, a }: { st: OnbStep; it: OnbItem; s: DeskState; a:
             const k = valKey(st, it, f);
             const cur = s.setup.vals[k];
             return (
-              <label key={f.k} className="hz-onb-field">
+              <div key={f.k} className="hz-onb-fieldwrap">
+              <label className="hz-onb-field">
                 <span style={m(8.5, "0.14em", "var(--c6B7681)")}>{f.label}</span>
                 <input
                   className="hz-input"
@@ -88,9 +91,46 @@ function ItemCard({ st, it, s, a }: { st: OnbStep; it: OnbItem; s: DeskState; a:
                   }}
                 />
               </label>
+              {f.type === "password" && <SecretRow id={k} value={cur ?? ""} core={core} clear={() => a.updSetup((su) => { su.vals[k] = ""; })} />}
+              </div>
             );
           })}
         </div>
+      )}
+    </div>
+  );
+}
+
+function SecretRow({ id, value, core, clear }: { id: string; value: string; core: CoreSecrets; clear: () => void }) {
+  const saved = core.has(id);
+  const busy = core.busy === id;
+  const st = core.state.kind;
+  return (
+    <div className="hz-onb-secret" data-testid={`secret-${id}`}>
+      {saved ? (
+        <>
+          <span className="hz-onb-secret-ok">SAVED IN CORE · ENCRYPTED</span>
+          <button className="hz-btn hz-btn--sm" disabled={busy} onClick={() => void core.remove(id)}>REMOVE</button>
+        </>
+      ) : st === "ready" ? (
+        <>
+          <span className="hz-onb-secret-note">Held in this tab only until you save it to core.</span>
+          <button
+            className="hz-btn hz-btn--sm"
+            disabled={busy || value.trim() === ""}
+            onClick={() => void core.save(id, value.trim()).then((ok) => ok && clear())}
+          >
+            {busy ? "SAVING…" : "SAVE TO CORE"}
+          </button>
+        </>
+      ) : (
+        <span className="hz-onb-secret-note">
+          {st === "checking"
+            ? "Checking core…"
+            : st === "disabled"
+              ? "Core's key store is off: start core with HERMES_MASTER_KEY to save keys. Until then this value stays in this tab only."
+              : "Core isn't running, so this key stays in this tab only. Start it with pnpm dev:core."}
+        </span>
       )}
     </div>
   );
@@ -233,6 +273,7 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
   const mobile = v.isMobile;
   const ready = venuesReady(s.setup);
   const info = step < STEPS.length ? STEPS[step] : null;
+  const core = useCoreSecrets();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -297,7 +338,7 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
             )}
             {info && (
               <div className="hz-onb-grid" role={info.single ? "radiogroup" : "group"} aria-label={info.title}>
-                {info.items.map((it) => <ItemCard key={it.id} st={info} it={it} s={s} a={a} />)}
+                {info.items.map((it) => <ItemCard key={it.id} st={info} it={it} s={s} a={a} core={core} />)}
               </div>
             )}
             {info?.id === "runtime" && <McpBlock />}
