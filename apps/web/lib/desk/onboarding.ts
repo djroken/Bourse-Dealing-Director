@@ -17,6 +17,8 @@ export interface OnbItem {
   fields: OnbField[];
   /** Always on and not toggleable (the paper venue). */
   locked?: boolean;
+  /** Placeholder for an integration that doesn't exist yet: shown, but can't be selected and takes no input. */
+  soon?: boolean;
 }
 export interface OnbStep {
   id: "runtime" | "model" | "data" | "venue";
@@ -82,18 +84,18 @@ export const STEPS: OnbStep[] = [
     ],
   },
   {
-    id: "venue", num: "04", label: "Venues & wallets", sub: "Only needed for Live",
-    title: "Connect venues",
-    desc: "Demo trades a paper book against live prices. To trade live, connect at least one venue with trade-only keys. Hermes never needs withdrawal permission.",
+    id: "venue", num: "04", label: "Venues & wallets", sub: "Live: coming soon",
+    title: "Venues and wallets",
+    desc: "Live trading isn't built yet, so the venues below are placeholders for the integrations on the roadmap. Hermes only paper trades: nothing you do here can place a real order, and there is no field to enter exchange keys.",
     items: [
       { id: "paper", name: "Paper venue", tag: "DEFAULT", desc: "Simulated fills at the live mid. Always on in Demo.", fields: [], locked: true },
-      { id: "binance", name: "Binance", tag: "API KEY", desc: "Spot and USDⓈ-M perpetuals.", fields: KEYSEC() },
-      { id: "bybit", name: "Bybit", tag: "API KEY", desc: "Spot, perps and options on the unified account.", fields: KEYSEC() },
-      { id: "hyperliquid", name: "Hyperliquid", tag: "API WALLET", desc: "On-chain perps. Use an API wallet so the main key never leaves your device.", fields: [F("addr", "ACCOUNT ADDRESS", "0x…"), F("key", "API WALLET KEY", "Trade-only agent key", "password")] },
-      { id: "coinbase", name: "Coinbase Advanced", tag: "API KEY", desc: "Spot trading on Coinbase Advanced.", fields: KEYSEC() },
-      { id: "alpaca", name: "Alpaca", tag: "API KEY", desc: "US equities and ETFs. Paper and live accounts.", fields: KEYSEC() },
-      { id: "ibkr", name: "Interactive Brokers", tag: "GATEWAY", desc: "Global multi-asset through the Client Portal gateway running on your machine.", fields: [F("url", "GATEWAY URL", "https://localhost:5000")] },
-      { id: "wallet", name: "EVM wallet", tag: "WALLET", desc: "On-chain swaps from a dedicated hot wallet. Fund it with only what you intend to trade.", fields: [F("addr", "WALLET ADDRESS", "0x…")] },
+      { id: "binance", name: "Binance", tag: "API KEY", desc: "Spot and USDⓈ-M perpetuals.", fields: KEYSEC(), soon: true },
+      { id: "bybit", name: "Bybit", tag: "API KEY", desc: "Spot, perps and options on the unified account.", fields: KEYSEC(), soon: true },
+      { id: "hyperliquid", name: "Hyperliquid", tag: "API WALLET", desc: "On-chain perps. Use an API wallet so the main key never leaves your device.", fields: [F("addr", "ACCOUNT ADDRESS", "0x…"), F("key", "API WALLET KEY", "Trade-only agent key", "password")] , soon: true },
+      { id: "coinbase", name: "Coinbase Advanced", tag: "API KEY", desc: "Spot trading on Coinbase Advanced.", fields: KEYSEC(), soon: true },
+      { id: "alpaca", name: "Alpaca", tag: "API KEY", desc: "US equities and ETFs. Paper and live accounts.", fields: KEYSEC(), soon: true },
+      { id: "ibkr", name: "Interactive Brokers", tag: "GATEWAY", desc: "Global multi-asset through the Client Portal gateway running on your machine.", fields: [F("url", "GATEWAY URL", "https://localhost:5000")] , soon: true },
+      { id: "wallet", name: "EVM wallet", tag: "WALLET", desc: "On-chain swaps from a dedicated hot wallet. Fund it with only what you intend to trade.", fields: [F("addr", "WALLET ADDRESS", "0x…")] , soon: true },
     ],
   },
 ];

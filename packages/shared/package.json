@@ -1,22 +1,23 @@
 {
   "name": "shared",
   "version": "1.0.0",
-  "description": "",
+  "description": "Shared types, zod schemas and the default agent roster for Hermes.",
   "main": "src/index.ts",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "type": "module",
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
     "zod": "^4.6.5"
   },
   "exports": {
     ".": "./src/index.ts"
-  }
+  },
+  "private": true
 }

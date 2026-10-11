@@ -57,6 +57,9 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
           <button className="hz-x" aria-label="Close floor window" onClick={a.toggleCenter}>×</button>
         </div>
       </div>
+      <div className="hz-sim" role="note">
+        SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice
+      </div>
 
       {s.tab === "chat" && (
         <>

@@ -24,6 +24,19 @@ function Scrim({ onClose, danger, label, children }: { onClose: () => void; dang
 export default function Modals({ s, v, a }: { s: DeskState; v: DeskView; a: DeskActions }) {
   return (
     <>
+      {s.liveNotice && (
+        <Scrim label="Live trading" onClose={a.closeLiveNotice}>
+          <div style={m(9.5, "0.2em", "var(--cFF9E2C)")}>LIVE TRADING</div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: "var(--cF2F5F7)" }}>Live trading isn&apos;t available yet</div>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--cA9B3BC)", textWrap: "pretty" }}>
+            Hermes only paper trades. Nothing in this version can place a real order, whatever you enter in Setup. The
+            desk runs a simulated floor against real public prices, with simulated fills.
+          </div>
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+            <button className="hz-btn hz-btn--sm hz-btn--amber" onClick={a.closeLiveNotice}>GOT IT</button>
+          </div>
+        </Scrim>
+      )}
       {s.confirmLive && (
         <Scrim danger label="Live trading" onClose={a.cancelLive}>
           <div style={m(9.5, "0.2em", "var(--cFF7A7A)")}>LIVE TRADING</div>

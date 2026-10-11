@@ -3,7 +3,7 @@
 
 import {
   type Autonomy, type Grp, type Side,
-  LBL, PERP, POS, RUNTIME_NAMES, SCRIPT, TAPE, TINTS,
+  APP_VERSION, LBL, PERP, POS, RUNTIME_NAMES, SCRIPT, TAPE, TINTS,
 } from "./data";
 import { cm, fmt, fmtQty, hms, money, path, walk } from "./format";
 import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
@@ -186,8 +186,8 @@ export function buildView(s: DeskState): DeskView {
   } as const)[s.feed];
   const muted = "var(--c9AA5B1)";
   const logBase: Array<{ level: string; text: string; tint: string; t?: number }> = [
-    { level: "BOOT", text: "hermes-core 0.9.3 · " + onFloor.length + " agents on the floor · mode " + (isLive ? "LIVE" : "demo / paper"), tint: "var(--c6B7681)" },
-    { level: "RUNTIME", text: "agent runtime → " + runtimeName, tint: muted },
+    { level: "BOOT", text: "hermes desk " + APP_VERSION + " · simulated floor · " + onFloor.length + " agents · mode " + (isLive ? "LIVE" : "demo / paper only"), tint: "var(--c6B7681)" },
+    { level: "RUNTIME", text: "agent runtime → simulated (" + runtimeName + " selected in setup, not connected yet)", tint: muted },
     { level: "FEED", text: "prices → " + feedName, tint: s.feed === "SIMULATED" ? DOWN : muted },
     { level: "FEED", text: "charts → " + (s.chartSrc === "tv" ? "tradingview widget " : "native ") + LBL[s.chartSym].tv + " · candles " + (s.kl[s.chartSym] ? "loaded" : "pending"), tint: muted },
     { level: "FEED", text: "fx → frankfurter (ECB daily) " + (s.fx ? "EUR/USD " + s.fx.toFixed(4) : "pending"), tint: muted },
@@ -253,7 +253,7 @@ export function buildView(s: DeskState): DeskView {
     filters: grpName.map(([id, label]) => ({ id, label, active: s.filter === id })),
     roster, rosterCount: visible.length + " / " + onFloor.length + " AGENTS",
     chat, fills, logs, approvals, nAppr, tabs,
-    centerMeta: "SESSION S-2291 · " + s.seq.length + " EVENTS",
+    centerMeta: "SIMULATED · " + s.seq.length + " EVENTS",
     navStr: cm(capital + pnl), pnlStr: money(pnl), pnlColor: pnl >= 0 ? UP : DOWN,
     chart: {
       label: LBL[s.chartSym].label, feedShort: s.feed, last: fmt(s.live[s.chartSym].px, LBL[s.chartSym].dp),
@@ -262,12 +262,12 @@ export function buildView(s: DeskState): DeskView {
       funding: s.funding === null ? "—" : (s.funding >= 0 ? "+" : "") + s.funding.toFixed(4) + "%",
       vol: vol ? cm(vol) : "—",
     },
-    engineState: s.halted ? "HALTED BY OPERATOR" : "ENGINE LIVE",
+    engineState: s.halted ? "HALTED BY OPERATOR" : "SIMULATED FLOOR",
     engineColor: s.halted ? DOWN : ACCENT,
     feedLabel: "FEED " + s.feed + (s.feed === "SIMULATED" ? "" : " · 5s"),
-    runtimeLabel: "RUNTIME " + runtimeName.toUpperCase(),
+    runtimeLabel: "RUNTIME SIMULATED",
     lastFill,
-    modeLabel: "HERMES v0.9 · " + (isLive ? "LIVE" : "DEMO · PAPER"),
+    modeLabel: "HERMES v" + APP_VERSION + " · " + (isLive ? "LIVE" : "DEMO · PAPER ONLY"),
     liveBanner: "LIVE · ORDERS ROUTE TO " + (venueNames || "NO VENUE").toUpperCase() + " · AGENTS ON AUTO PLACE REAL ORDERS",
     liveBannerShort: "LIVE · " + (venueNames || "NO VENUE").toUpperCase(),
     liveModal: {

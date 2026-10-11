@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "next": "16.3.8",
@@ -21,7 +24,10 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "@playwright/test": "^1.55.0"
   },
-  "packageManager": "pnpm@11.0.9"
+  "description": "Hermes Desk: the trading-floor UI.",
+  "license": "MIT"
 }

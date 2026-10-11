@@ -54,7 +54,7 @@ export default function Header({ s, v, a }: Props) {
 
           <div className="hz-seg hz-seg--mode" role="group" aria-label="Trading mode">
             <button data-on={!v.isLive} onClick={a.setDemo}>DEMO</button>
-            <button data-on={v.isLive} data-kind="live" onClick={a.requestLive}>LIVE</button>
+            <button data-on={v.isLive} data-kind="live" data-soon="true" title="Live trading is not available yet" onClick={a.requestLive}>LIVE</button>
           </div>
           <button className="hz-btn" onClick={a.openSetup}>SETUP</button>
           <button

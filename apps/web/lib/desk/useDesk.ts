@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Agent, type Mode, DEFAULT_SETUP, LBL, PERP, SEED_AGENTS, SETUP_KEY, type Setup } from "./data";
+import { type Agent, type Mode, DEFAULT_SETUP, LIVE_AVAILABLE, LBL, PERP, SEED_AGENTS, SETUP_KEY, type Setup } from "./data";
 import { fmt, fmtQty } from "./format";
 import { VENUE_STEP, persistable } from "./onboarding";
 import { fetchCloses, fetchEurUsd, fetchFundingRate, fetchQuotes } from "./market";
@@ -225,15 +225,22 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
         }),
 
       setDemo: () => patch({ mode: "demo" as Mode }),
-      requestLive: () => patch((st) => (st.mode === "live" ? null : { confirmLive: true })),
-      toggleMode: () => patch((st) => (st.mode === "live" ? { mode: "demo" as Mode } : { confirmLive: true })),
-      cancelLive: () => patch({ confirmLive: false }),
-      confirmLiveGo: () =>
+      // Every route to Live goes through LIVE_AVAILABLE, so while it is false the mode can never become "live".
+      requestLive: () =>
+        patch((st) => (st.mode === "live" ? null : LIVE_AVAILABLE ? { confirmLive: true } : { liveNotice: true })),
+      toggleMode: () =>
         patch((st) =>
-          venuesReady(st.setup).length
-            ? { confirmLive: false, mode: "live" as Mode }
-            : { confirmLive: false, setupNotice: true, onbStep: VENUE_STEP },
+          st.mode === "live" ? { mode: "demo" as Mode } : LIVE_AVAILABLE ? { confirmLive: true } : { liveNotice: true },
         ),
+      cancelLive: () => patch({ confirmLive: false }),
+      closeLiveNotice: () => patch({ liveNotice: false }),
+      confirmLiveGo: () =>
+        patch((st) => {
+          if (!LIVE_AVAILABLE) return { confirmLive: false, liveNotice: true };
+          return venuesReady(st.setup).length
+            ? { confirmLive: false, mode: "live" as Mode }
+            : { confirmLive: false, setupNotice: true, onbStep: VENUE_STEP };
+        }),
       openSetup: () => patch({ setupNotice: true, onbStep: 0 }),
       closeSetup: () => patch((st) => ({ setupNotice: false, setup: st.setup.done ? st.setup : { ...st.setup, done: true } })),
       setOnbStep: (onbStep: number) => patch({ onbStep }),
@@ -256,7 +263,8 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
           setupNotice: false,
           setup: { ...st.setup, done: true },
           mode: "demo" as Mode,
-          confirmLive: live && venuesReady(st.setup).length > 0,
+          confirmLive: LIVE_AVAILABLE && live && venuesReady(st.setup).length > 0,
+          liveNotice: !LIVE_AVAILABLE && live,
         })),
 
       patchSel,
