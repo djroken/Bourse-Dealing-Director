@@ -165,3 +165,16 @@ test("a custom model id typed in the drawer is sent to core", async ({ page }) =
   await drawer.getByLabel("Model", { exact: true }).selectOption("openrouter-free:meta-llama/llama-3.3-70b-instruct:free");
   await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:meta-llama/llama-3.3-70b-instruct:free")).toBe(true);
 });
+
+test("a guest agent's trade and chat show up on the desk, labelled as a guest", async ({ page }) => {
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  const now = Date.now();
+  core.send({ type: "chat", agentId: "GST-001", role: "Guest: Claude Bot", name: "Claude Bot", text: "Fading the dip", ts: now });
+  await expect(page.locator(".hz-log")).toContainText("GUEST Claude Bot: Fading the dip");
+  core.send({ type: "decision", agentId: "GST-001", role: "Guest: Claude Bot", symbol: "BTC-USDT", action: "BUY", size: 0.05, price: 96000, rationale: "Placed by Claude Bot", riskChecked: true, ts: now + 1 });
+  await expect(page.locator(".hz-log")).toContainText("GUEST Claude Bot · BUY BTC-PERP 0.0500 @ 96,000 · paper");
+  await page.locator(".hz-tab", { hasText: "BLOTTER" }).click();
+  await expect(page.locator(".hz-blotter-body").filter({ hasText: "Claude Bot (guest)" }).first()).toContainText("96,000");
+});

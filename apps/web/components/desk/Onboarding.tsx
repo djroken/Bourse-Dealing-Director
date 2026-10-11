@@ -156,7 +156,7 @@ function McpBlock() {
         </button>
       </div>
       <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--c98A3AD)" }}>
-        Target config for any MCP client. The Hermes MCP server is not built yet, so this shows the interface it will expose.
+        Config for any MCP client that supports HTTP servers. Start core with HERMES_MCP_TOKEN set (16+ random characters). Each agent gets its own $100k paper account on live prices, with fixed risk limits. No real money, ever.
       </div>
       <pre className="hz-onb-code">{MCP_SNIPPET}</pre>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>

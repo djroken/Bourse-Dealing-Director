@@ -15,6 +15,7 @@ export type CoreMsg =
   | { type: "lifecycle"; agentId: string; role: string; status: "initialized" | "running" | "paused" | "halted"; ts: number }
   | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number }
   | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
+  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number };
 
@@ -32,6 +33,9 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
   if (raw.type === "lifecycle") {
     const st = raw.status;
     return st === "initialized" || st === "running" || st === "paused" || st === "halted" ? { type: "lifecycle", agentId, role, status: st, ts } : null;
+  }
+  if (raw.type === "chat") {
+    return str(raw.name, 64) && str(raw.text, 500) && raw.text.trim() ? { type: "chat", agentId, role, name: raw.name, text: raw.text, ts } : null;
   }
   if (raw.type === "config") {
     const rl = raw.riskLimits;
@@ -93,7 +97,30 @@ export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<
   return { core: "offline", seq: push(s.seq, { sysText: "Lost connection to Hermes Core. Back to the simulated floor.", t: now }) };
 }
 
+/** Guest agents (connected over MCP) have no seat on the Desk roster; their activity shows in the chat and blotter. */
+const isGuest = (role: string): boolean => /^guest:/i.test(role.trim());
+const guestName = (role: string): string => role.replace(/^guest:\s*/i, "").trim() || "Guest";
+
 export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | null {
+  if (isGuest(m.role)) {
+    const name = guestName(m.role);
+    if (m.type === "chat") return { seq: push(s.seq, { sysText: `GUEST ${name}: ${m.text}`, t: m.ts }) };
+    if (m.type === "decision") {
+      const k = deskSym(m.symbol);
+      if (!k) return null;
+      if (m.action === "HOLD" || m.size === 0) {
+        return m.riskChecked ? null : { seq: push(s.seq, { sysText: `GUEST ${name} · ${PERP(k)} rejected by the risk gate: ${m.rationale}`, t: m.ts }) };
+      }
+      const fill: Fill = { side: m.action, k, q: m.size, agent: `${name} (guest)`, t: m.ts, px: m.price, status: "FILLED", raw: true };
+      return {
+        fills: [fill].concat(s.fills).slice(0, 40),
+        seq: push(s.seq, { sysText: `GUEST ${name} · ${m.action} ${PERP(k)} ${fmtQty(m.size)} @ ${fmt(m.price, LBL[k]!.dp)} · paper · risk checked`, t: m.ts }),
+      };
+    }
+    return null;
+  }
+  if (m.type === "chat") return null;
+
   if (m.type === "lifecycle") {
     // Per-seat pause arrives in `config`; lifecycle only tells us about the floor as a whole.
     return m.agentId === "*" ? { halted: m.status === "halted" } : null;

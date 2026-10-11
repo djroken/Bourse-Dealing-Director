@@ -111,13 +111,16 @@ export const STEP_RAIL: Array<{ num: string; label: string; sub: string }> = [
   { num: "06", label: "Review & launch", sub: "Check and go" },
 ];
 
-export const MCP_TOOLS = ["get_quotes", "get_positions", "place_order", "cancel_order", "get_risk", "read_floor", "post_to_floor"];
+export const MCP_TOOLS = ["get_quotes", "get_positions", "place_order", "get_risk", "read_floor", "post_to_floor"];
 export const MCP_SNIPPET = `{
   "mcpServers": {
     "hermes": {
-      "command": "npx",
-      "args": ["-y", "hermes-desk", "mcp"],
-      "env": { "HERMES_URL": "http://localhost:4000" }
+      "type": "http",
+      "url": "http://127.0.0.1:4000/mcp",
+      "headers": {
+        "Authorization": "Bearer <your HERMES_MCP_TOKEN>",
+        "X-Hermes-Agent": "My Agent"
+      }
     }
   }
 }`;

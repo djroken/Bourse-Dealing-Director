@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from "../../../packages/shared/src";
+import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from "../../../packages/shared/src";
 import { SEED_AGENTS } from "../lib/desk/data";
 import { applyCoreMsg, coreFloorUrl, deskSym, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "../lib/desk/core";
 import { createInitialState, tickState, type DeskState } from "../lib/desk/state";
@@ -184,5 +184,39 @@ describe("helpers", () => {
     expect(deskSym("SOL-USDT")).toBe("SOLUSDT");
     expect(deskSym("constructor")).toBeNull();
     expect(deskSym("USD-EUR")).toBeNull();
+  });
+});
+
+describe("guest agents (MCP)", () => {
+  const guestDecision = (over: Record<string, unknown> = {}) => ({
+    type: "decision", agentId: "GST-001", role: "Guest: Claude Bot", symbol: "BTC-USDT", action: "BUY", size: 0.05, price: 96000, rationale: "Placed by Claude Bot · within risk limits", riskChecked: true, ts: 9, ...over,
+  });
+  it("parses a chat line and rejects empty or oversized ones", () => {
+    const chat = { type: "chat", agentId: "GST-001", role: "Guest: Claude Bot", name: "Claude Bot", text: "Fading the dip", ts: 8 };
+    expect(AgentChatMsgSchema.safeParse(chat).success).toBe(true);
+    expect(parseCoreMsg(chat)).toMatchObject({ type: "chat", name: "Claude Bot" });
+    expect(parseCoreMsg({ ...chat, text: "   " })).toBeNull();
+    expect(parseCoreMsg({ ...chat, text: "x".repeat(501) })).toBeNull();
+  });
+  it("a guest's fill lands in the blotter and chat, labelled as a guest, without touching the roster", () => {
+    const s = base();
+    const patch = applyCoreMsg(s, parseCoreMsg(guestDecision())!)!;
+    expect(patch.fills![0]).toMatchObject({ agent: "Claude Bot (guest)", side: "BUY", k: "BTCUSDT", raw: true });
+    expect(patch.seq!.at(-1)!.sysText).toContain("GUEST Claude Bot · BUY");
+    expect(patch.agents).toBeUndefined();
+  });
+  it("a guest's rejected order and chat show as system lines", () => {
+    const s = base();
+    const veto = applyCoreMsg(s, parseCoreMsg(guestDecision({ action: "HOLD", size: 0, riskChecked: false, rationale: "Order is over the $5000 clip: not placed" }))!)!;
+    expect(veto.seq!.at(-1)!.sysText).toContain("rejected by the risk gate");
+    const say = applyCoreMsg(s, parseCoreMsg({ type: "chat", agentId: "GST-001", role: "Guest: Claude Bot", name: "Claude Bot", text: "hello", ts: 1 })!)!;
+    expect(say.seq!.at(-1)!.sysText).toBe("GUEST Claude Bot: hello");
+  });
+  it("a guest's seat messages (config, pnl, intent) are ignored", () => {
+    const s = base();
+    for (const m of [
+      { type: "pnl", agentId: "GST-001", role: "Guest: Claude Bot", pnl: 5, exposure: 100, positions: [], ts: 1 },
+      { type: "lifecycle", agentId: "GST-001", role: "Guest: Claude Bot", status: "running", ts: 1 },
+    ]) expect(applyCoreMsg(s, parseCoreMsg(m)!)).toBeNull();
   });
 });

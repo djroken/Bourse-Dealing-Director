@@ -14,6 +14,7 @@
     "keygen": "node scripts/keygen.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "fastify": "^5.12.5",
     "shared": "workspace:*",
     "tsx": "^4.23.15",

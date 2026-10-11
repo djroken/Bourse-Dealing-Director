@@ -10,6 +10,8 @@ export interface CoreConfig {
   masterKey?: string;
   /** Where Ollama listens. */
   ollamaHost: string;
+  /** Bearer token for /mcp. Unset (or under 16 characters) leaves MCP switched off. */
+  mcpToken?: string;
   /** Model calls per provider per UTC day (0 = unlimited). A runaway-loop guard; raise it if you want more. */
   modelDailyCap: { ollama: number; openrouter: number };
 }
@@ -40,6 +42,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     feedIntervalMs: 5000,
     dataDir: env.HERMES_DATA_DIR?.trim() || '.hermes',
     masterKey: env.HERMES_MASTER_KEY?.trim() || undefined,
+    mcpToken: env.HERMES_MCP_TOKEN?.trim() || undefined,
     ollamaHost: env.OLLAMA_HOST?.trim() || 'http://127.0.0.1:11434',
     modelDailyCap: { ollama: capOf(env.OLLAMA_DAILY_CAP, 0), openrouter: capOf(env.OPENROUTER_DAILY_CAP, 200) },
   };

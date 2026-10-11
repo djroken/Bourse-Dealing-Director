@@ -22,7 +22,18 @@ export interface FloorAgent {
   /** Signed: losses are negative. Realised + unrealised on the paper book; this is what the loss stop reads. */
   dailyPnL: number;
   book: Book;
+  /** A guest agent connected over MCP. It trades only when it calls place_order; core's stub/model rules skip it. */
+  external?: boolean;
 }
+
+/** Risk limits every guest agent gets. USD; sized for the $100k paper book. Not editable by the guest. */
+export const GUEST_LIMITS = { maxClip: 5000, maxLeverage: 3, dailyLossStop: 1000 };
+export const PAPER_CAPITAL = 100_000;
+const MAX_GUESTS = 8;
+
+export type OrderResult =
+  | { ok: true; symbol: string; side: 'BUY' | 'SELL'; size: number; price: number; pnl: number; exposure: number }
+  | { ok: false; reason: string };
 export interface Tick {
   price: number;
   change24h: number | null;
@@ -107,6 +118,9 @@ export function createEngine(opts: EngineOptions = {}) {
     book: newBook(),
   }));
   const lastPx = new Map<string, number>();
+  const lastTick = new Map<string, Tick & { ts: number }>();
+  const recent: FloorMsg[] = [];
+  const postLog = new Map<string, number[]>();
 
   interface Client {
     ws: FloorSocket;
@@ -120,6 +134,10 @@ export function createEngine(opts: EngineOptions = {}) {
     c.subscriptions.size === 0 || msg.agentId === '*' || c.subscriptions.has(msg.agentId);
 
   const broadcast = (msg: FloorMsg): void => {
+    if (msg.type === 'intent' || msg.type === 'decision' || msg.type === 'chat') {
+      recent.push(msg);
+      if (recent.length > 60) recent.shift();
+    }
     const payload = JSON.stringify(msg);
     for (const c of clients) {
       if (c.ws.readyState === WS_OPEN && wants(c, msg)) c.ws.send(payload);
@@ -165,7 +183,7 @@ export function createEngine(opts: EngineOptions = {}) {
   });
 
   const evaluate = (agent: FloorAgent, symbol: string, tick: Tick): void => {
-    if (agent.state !== 'running' || !agent.config.trades) return;
+    if (agent.external || agent.state !== 'running' || !agent.config.trades) return;
     const key = `${agent.id}:${symbol}`;
     const last = lastEval.get(key);
     const isModelSeat = !!advisor?.handles(agent.config.model);
@@ -219,21 +237,80 @@ export function createEngine(opts: EngineOptions = {}) {
     });
   };
 
-  /** Human-approved order. Rejected (never clamped) if it breaks a limit, so the operator sees exactly what happened. */
-  const placeOrder = (role: string, symbol: string, side: 'BUY' | 'SELL', size: number): void => {
-    const agent = agents.find((a) => norm(a.config.role) === norm(role) && a.config.trades);
-    if (!agent) return;
+  /**
+   * The one way an order reaches a paper book from outside the stub/model rules: an operator's approval or a guest agent's
+   * place_order. Rejected (never clamped) if it breaks a limit, so the caller sees exactly what happened.
+   */
+  const submitOrder = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number, note: string): OrderResult => {
     const price = lastPx.get(symbol);
-    const veto = (why: string) =>
+    const veto = (why: string): OrderResult => {
       broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: 'HOLD', size: 0, price: price ?? 1, rationale: why, riskChecked: false, ts: now() });
+      return { ok: false, reason: why };
+    };
     if (agent.state !== 'running') return veto('Floor is halted: order not placed');
     if (price === undefined) return veto('No price for this symbol yet: order not placed');
-    const { maxClip, dailyLossStop } = agent.config.riskLimits;
+    if (!(size > 0) || !Number.isFinite(size)) return veto('Size must be a positive number: order not placed');
+    const { maxClip, maxLeverage, dailyLossStop } = agent.config.riskLimits;
     if (size * price > maxClip) return veto(`Order is over the $${maxClip} clip: not placed`);
     if (!withinLossStop(agent.dailyPnL, dailyLossStop)) return veto('Daily loss stop reached: not placed');
+    if (agent.external) {
+      // Guests have no stub strategy to keep them small, so cap total exposure at maxLeverage x the paper book. Reducing is always fine.
+      const cap = PAPER_CAPITAL * maxLeverage;
+      const cur = mark(agent.book, lastPx).exposure;
+      const oldQty = agent.book.positions.get(symbol)?.qty ?? 0;
+      const post = cur - Math.abs(oldQty) * price + Math.abs(oldQty + (side === 'BUY' ? size : -size)) * price;
+      if (post > cur && post > cap) return veto(`Would take exposure over $${cap} (${maxLeverage}x the $${PAPER_CAPITAL} paper book): not placed`);
+    }
     applyFill(agent.book, symbol, side, size, price);
-    broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: side, size, price, rationale: 'Approved by operator · within risk limits', riskChecked: true, ts: now() });
-    broadcast(pnlMsg(agent));
+    broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: side, size, price, rationale: `${note} · within risk limits`, riskChecked: true, ts: now() });
+    const p = pnlMsg(agent);
+    broadcast(p);
+    return { ok: true, symbol, side, size, price, pnl: p.type === 'pnl' ? p.pnl : 0, exposure: p.type === 'pnl' ? p.exposure : 0 };
+  };
+
+  const placeOrder = (role: string, symbol: string, side: 'BUY' | 'SELL', size: number): void => {
+    const agent = agents.find((a) => norm(a.config.role) === norm(role) && a.config.trades && !a.external);
+    if (agent) submitOrder(agent, symbol, side, size, 'Approved by operator');
+  };
+
+  const cleanName = (n: string): string => n.replace(/[^\w .\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
+  /** Find or create the paper seat for a guest agent. Undefined when the floor already has the maximum number of guests. */
+  const registerGuest = (rawName: string): FloorAgent | undefined => {
+    const name = cleanName(rawName) || 'Guest agent';
+    const role = `Guest: ${name}`;
+    const found = agents.find((a) => a.external && norm(a.config.role) === norm(role));
+    if (found) return found;
+    if (agents.filter((a) => a.external).length >= MAX_GUESTS) return undefined;
+    const guest: FloorAgent = {
+      id: `GST-${String(agents.filter((a) => a.external).length + 1).padStart(3, '0')}`,
+      external: true,
+      state: stateOf({ id: '' } as FloorAgent),
+      dailyPnL: 0,
+      book: newBook(),
+      config: {
+        name, role, model: 'external agent (MCP)', temperature: 0, autonomy: 'AUTO', trades: true,
+        mandate: 'A guest agent connected over MCP, trading the $100k paper book on live prices. Core enforces the limits.',
+        riskLimits: { ...GUEST_LIMITS }, tools: ['mcp'], feeds: ['live-prices'],
+      },
+    };
+    agents.push(guest);
+    broadcast(lifecycle(guest));
+    broadcast(configMsg(guest));
+    log.info(`guest agent joined: ${name}`);
+    return guest;
+  };
+
+  const post = (agent: FloorAgent, raw: string): { ok: true } | { ok: false; reason: string } => {
+    // eslint-disable-next-line no-control-regex
+    const text = raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (!text) return { ok: false, reason: 'empty message' };
+    const t = now();
+    const log10 = (postLog.get(agent.id) ?? []).filter((x) => t - x < 10_000);
+    if (log10.length >= 5) return { ok: false, reason: 'slow down: 5 messages per 10 seconds' };
+    log10.push(t);
+    postLog.set(agent.id, log10);
+    broadcast({ type: 'chat', agentId: agent.id, role: agent.config.role, name: agent.config.name, text, ts: t });
+    return { ok: true };
   };
 
   /** Mark one seat's paper book and tell clients. Halted seats are still marked: halting stops decisions, not prices. */
@@ -272,12 +349,37 @@ export function createEngine(opts: EngineOptions = {}) {
     pushTick(symbol: string, tick: Tick): void {
       if (!TRADED_SYMBOLS.includes(symbol)) return;
       lastPx.set(symbol, tick.price);
+      lastTick.set(symbol, { ...tick, ts: now() });
       for (const a of agents) evaluate(a, symbol, tick);
       for (const a of agents) if (hasBook(a)) broadcast(pnlMsg(a));
     },
 
     haltAll,
     resumeAll,
+
+    // ---- for guest agents (MCP) ----
+    registerGuest,
+    submitOrder,
+    post,
+    quotes: () => [...lastTick.entries()].map(([symbol, t]) => ({ symbol, price: t.price, change24h: t.change24h, source: t.source, ts: t.ts })),
+    positionsOf(a: FloorAgent) {
+      const v = mark(a.book, lastPx);
+      return { pnl: v.pnl, exposure: v.exposure, positions: v.positions.map((p) => ({ ...p, markPx: lastPx.get(p.symbol) ?? p.avgPx })) };
+    },
+    riskOf(a: FloorAgent) {
+      const v = mark(a.book, lastPx);
+      const l = a.config.riskLimits;
+      return {
+        state: a.state,
+        paperCapital: PAPER_CAPITAL,
+        limits: { ...l },
+        maxExposure: PAPER_CAPITAL * l.maxLeverage,
+        exposure: v.exposure,
+        pnl: v.pnl,
+        lossStopRemaining: Math.max(0, l.dailyLossStop + v.pnl),
+      };
+    },
+    recentFloor: (n: number): FloorMsg[] => recent.slice(-Math.max(1, Math.min(n, 60))),
 
     setDailyPnL(id: string, pnl: number): boolean {
       const a = agents.find((x) => x.id === id);
