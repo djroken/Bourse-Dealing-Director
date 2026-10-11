@@ -1,22 +1,17 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+    "lib": ["ES2022"],
     "module": "ESNext",
-    "moduleResolution": "node",
-    "outDir": "./dist",
-    "baseUrl": ".",
-    "paths": {
-      "shared": ["../packages/shared/src"]
-    },
-    "rootDir": "./src",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    "noEmit": true,
     "strict": true,
+    "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true,
-    "sourceMap": true
+    "resolveJsonModule": true
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": ["src/**/*", "test/**/*"]
 }
