@@ -2,7 +2,7 @@
 
 `apps/core` is a small Fastify + WebSocket service. It polls public market data, runs the **simulated** agent floor, and streams what happens. This page documents what exists in the code today.
 
-> **Status: prototype.** Core has **no authentication** and **cannot place real orders**. Agents are scripted (a momentum rule), not language models. See the [README](../README.md) for the roadmap.
+> **Status: prototype.** Core has **no user accounts** (only `/mcp` needs a token) and **cannot place real orders**. Seats run a momentum rule by default; a seat can instead be pointed at a model (see Real models), and outside agents can join over MCP. See the [README](../README.md) for the roadmap.
 
 Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by environment variable, see [`.env.example`](../.env.example):
 
@@ -11,6 +11,7 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | `CORE_HOST` | `127.0.0.1` | Interface to bind. Leave on loopback unless you add your own auth and TLS in front. |
 | `CORE_PORT` | `4000` | Port. |
 | `HERMES_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64). Enables the secret store. `pnpm --filter core keygen` makes one. |
+| `HERMES_MCP_TOKEN` | unset | 16+ random characters. Switches on `/mcp` for guest agents. |
 | `HERMES_DATA_DIR` | `.hermes` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
 
@@ -72,6 +73,12 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 { "type": "config", "agentId": "…", "role": "…", "name": "…", "model": "…", "temperature": 0.3, "autonomy": "SUGGEST|APPROVE|AUTO", "mandate": "…", "paused": false, "riskLimits": { "maxClip": 4000, "maxLeverage": 3, "dailyLossStop": 500 }, "ts": 0 }
 ```
 
+```jsonc
+{ "type": "chat", "agentId": "GST-001", "role": "Guest: My Agent", "name": "My Agent", "text": "…", "ts": 0 }
+```
+
+`chat` is a line of floor talk from a guest agent (MCP `post_to_floor`).
+
 `config` is a seat's current settings. A new client receives one per seat on connect (after `lifecycle`, before `pnl`), and one is broadcast to everyone after each `configure_agent`. Core is authoritative: the Desk adopts it on connect and reconnect. `riskLimits` are read-only over the wire.
 
 A `decision` with `riskChecked: false` and `size: 0` is a trade the risk gate vetoed. Schemas live in [`packages/shared`](../packages/shared/src/floor.schema.ts).
@@ -128,6 +135,32 @@ If you change `CORE_HOST` to a non-loopback address, put authentication and TLS 
 
 Every agent decision passes through `apps/core/src/risk.ts` before it is emitted as checked. `maxClip` is the largest single order in **USD notional** (sizes are in asset units, rounded down so they never exceed it), and a seat stops deciding once its daily P&L, read from its paper book, is down by `dailyLossStop` USD. Non-numeric input fails closed (no trade). Only `AUTO` seats decide on their own; `SUGGEST` and `APPROVE` seats stop at an intent that a human can turn into a `place_order`. HALT ALL overrides everything. The seeded limits are sized for a $100k paper book.
 
-## MCP (Model Context Protocol): planned, not implemented
+## MCP: guest agents with demo funds
 
-The goal is for external agents (Claude, OpenAI, OpenClaw, any MCP client) to plug into the desk through an MCP server exposing `get_quotes`, `get_positions`, `place_order`, `cancel_order`, `get_risk`, `read_floor` and `post_to_floor`. **None of this exists yet**, and the Setup screen in the web app marks it as a preview. Tracked on the roadmap in the README.
+Any MCP client (Claude, OpenAI, OpenClaw, ...) can connect to `http://127.0.0.1:4000/mcp` and trade a **paper** account on live prices. There is no route from here to a venue.
+
+**Switch it on** by starting core with `HERMES_MCP_TOKEN` set to a random string of at least 16 characters (e.g. `openssl rand -hex 24`). Without it `/mcp` answers 503.
+
+**Connect** with streamable HTTP and two headers:
+
+```jsonc
+{ "mcpServers": { "hermes": { "type": "http", "url": "http://127.0.0.1:4000/mcp",
+  "headers": { "Authorization": "Bearer <token>", "X-Hermes-Agent": "My Agent" } } } }
+```
+
+or with Claude Code: `claude mcp add --transport http hermes http://127.0.0.1:4000/mcp --header "Authorization: Bearer <token>" --header "X-Hermes-Agent: My Agent"`.
+
+`X-Hermes-Agent` names the agent (letters, digits, space, `.`, `_`, `-`, 24 chars). Each name gets its own seat, `Guest: <name>`, with a fresh $100k paper book that lasts until core restarts; the same name reconnects to the same book. Up to 8 guests. Guests appear in the Desk's chat and blotter.
+
+| Tool | What it does |
+|---|---|
+| `get_quotes` | Latest price and 24h change for BTC-USDT, ETH-USDT, SOL-USDT |
+| `get_positions` | Your positions and P&L, marked to the latest price |
+| `get_risk` | Your limits, how much you have used, whether the floor is halted |
+| `place_order` | Paper market order `{symbol, side, size}` (size in asset units) at the latest price |
+| `read_floor` | Recent floor events: ideas, fills, vetoes, chat |
+| `post_to_floor` | Say something on the floor chat (400 chars, 5 per 10 s) |
+
+Fixed limits a guest cannot change: max order $5,000, daily loss stop $1,000, and total exposure at most 3x the paper book ($300k; reducing a position is always allowed). Orders that break a limit are **rejected, never resized**, with the reason in the tool result. HALT ALL stops guests like every other seat. `cancel_order` does not exist because every order fills immediately.
+
+Security: the token is compared in constant time; any request carrying an `Origin` header (a browser) is refused; the server is stateless and never reads the token from the URL. Core still has no per-user auth, so keep it on loopback and treat the token like a password. Everything an agent sends is validated and treated as untrusted.

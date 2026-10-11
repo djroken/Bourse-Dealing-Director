@@ -65,18 +65,30 @@ export const AgentConfigMsgSchema = z.object({
   ts: z.number(),
 });
 
+/** A line of floor talk from an agent (today: guest agents connected over MCP). Plain text only. */
+export const AgentChatMsgSchema = z.object({
+  type: z.literal('chat'),
+  agentId: z.string(),
+  role: z.string(),
+  name: z.string(),
+  text: z.string().max(500),
+  ts: z.number(),
+});
+
 export type AgentLifecycle = z.infer<typeof AgentLifecycleSchema>;
 export type AgentIntent = z.infer<typeof AgentIntentSchema>;
 export type AgentDecision = z.infer<typeof AgentDecisionSchema>;
 export type AgentPnl = z.infer<typeof AgentPnlSchema>;
 export type AgentConfigMsg = z.infer<typeof AgentConfigMsgSchema>;
+export type AgentChatMsg = z.infer<typeof AgentChatMsgSchema>;
 
 export type FloorMsg =
   | z.infer<typeof AgentLifecycleSchema>
   | z.infer<typeof AgentIntentSchema>
   | z.infer<typeof AgentDecisionSchema>
   | z.infer<typeof AgentPnlSchema>
-  | z.infer<typeof AgentConfigMsgSchema>;
+  | z.infer<typeof AgentConfigMsgSchema>
+  | z.infer<typeof AgentChatMsgSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';
