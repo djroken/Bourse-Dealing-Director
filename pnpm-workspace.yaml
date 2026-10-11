@@ -1,6 +1,10 @@
 packages:
   - 'apps/*'
   - 'packages/*'
+
+# pnpm 10+/11 refuse to run dependency install scripts unless approved here.
+# esbuild's script only verifies its prebuilt binary; the other two are optional native fallbacks.
 allowBuilds:
-  esbuild: set this to true or false
-  unrs-resolver: set this to true or false
+  esbuild: true
+  sharp: false
+  unrs-resolver: false

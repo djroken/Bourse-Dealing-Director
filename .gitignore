@@ -13,9 +13,10 @@ build/
 .coverage/
 *.tsbuildinfo
 
-# Environment
+# Environment (the example file is committed on purpose)
 .env
 .env.*
+!.env.example
 
 # Misc
 .DS_Store
@@ -23,6 +24,11 @@ Thumbs.db
 logs
 *.pid
 *.seed
+
+# Test output
+coverage/
+playwright-report/
+test-results/
 
 # Hermes specific
 .hermes/

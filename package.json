@@ -1,11 +1,16 @@
 {
   "name": "hermes-trading-floor",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
+  "description": "An agentic trading desk: a floor of AI agents you watch, instruct and approve. Paper trading only.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/djroken/Hermes-Trading-Floor.git"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
@@ -14,14 +19,15 @@
     }
   },
   "scripts": {
+    "dev": "concurrently -n web,core -c cyan,yellow \"pnpm dev:web\" \"pnpm dev:core\"",
     "dev:web": "pnpm --filter web dev",
     "dev:core": "pnpm --filter core dev",
-    "dev:shared": "pnpm --filter shared build --watch",
-    "dev": "concurrently \"pnpm dev:web\" \"pnpm dev:core\" \"pnpm dev:shared\"",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "pnpm --filter web build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "lint": "pnpm -r --if-present lint",
+    "test": "pnpm -r --if-present test",
+    "check": "pnpm typecheck && pnpm lint && pnpm test"
   },
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "concurrently": "^10.0.5"
   }
