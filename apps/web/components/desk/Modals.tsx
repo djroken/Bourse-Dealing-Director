@@ -35,20 +35,6 @@ export default function Modals({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
           </div>
         </Scrim>
       )}
-      {s.setupNotice && (
-        <Scrim label="Setup" onClose={a.closeSetup}>
-          <div style={m(9.5, "0.2em", "var(--cFF9E2C)")}>SETUP</div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: "var(--cF2F5F7)" }}>Setup &amp; integrations</div>
-          <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--cA9B3BC)", textWrap: "pretty" }}>
-            The six-step onboarding (runtime, model providers, market data, venues, floor and risk, launch) is the next milestone,
-            with API keys held server-side rather than in this browser. Until then the desk runs on defaults:
-            {" "}{v.capitalLabel} paper capital on live public prices.
-          </div>
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
-            <button className="hz-btn hz-btn--sm hz-btn--amber" onClick={a.closeSetup}>CLOSE</button>
-          </div>
-        </Scrim>
-      )}
     </>
   );
 }
