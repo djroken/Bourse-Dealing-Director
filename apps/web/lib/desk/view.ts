@@ -55,6 +55,8 @@ export interface DeskView {
   nAppr: number;
   tabs: Array<{ id: Tab; label: string; active: boolean }>;
   centerMeta: string;
+  /** The honesty strip above the floor chat. */
+  strip: string;
   navStr: string;
   pnlStr: string;
   pnlColor: string;
@@ -93,6 +95,7 @@ export function buildView(s: DeskState): DeskView {
   const scale = bookScale(setup);
   const capital = capitalOf(setup);
   const isLive = s.mode === "live";
+  const core = s.core === "live";
   const resolved = resolveTheme(s);
   const ready = venuesReady(setup);
   const venueNames = ready.map((v) => v.name).join(", ");
@@ -169,9 +172,10 @@ export function buildView(s: DeskState): DeskView {
 
   const fills: FillRow[] = s.fills.map((fl, n) => {
     const now = s.live[fl.k].px;
-    const pnl = (fl.side === "BUY" ? 1 : -1) * fl.q * (now - fl.px) * scale;
+    const sc = fl.raw ? 1 : scale;
+    const pnl = (fl.side === "BUY" ? 1 : -1) * fl.q * (now - fl.px) * sc;
     return {
-      key: fl.t + ":" + n, time: hms(fl.t), side: fl.side, sym: PERP(fl.k), qty: fmtQty(fl.q * scale),
+      key: fl.t + ":" + n, time: hms(fl.t), side: fl.side, sym: PERP(fl.k), qty: fmtQty(fl.q * sc),
       px: fmt(fl.px, LBL[fl.k].dp), pnl: money(pnl), agent: fl.agent, status: isLive ? fl.status : "PAPER",
       sideColor: fl.side === "SELL" ? DOWN : UP, pnlColor: pnl < 0 ? DOWN : UP,
       stColor: fl.status === "SETTLED" ? "var(--c5D6873)" : "var(--c9AA5B1)",
@@ -186,8 +190,8 @@ export function buildView(s: DeskState): DeskView {
   } as const)[s.feed];
   const muted = "var(--c9AA5B1)";
   const logBase: Array<{ level: string; text: string; tint: string; t?: number }> = [
-    { level: "BOOT", text: "hermes desk " + APP_VERSION + " · simulated floor · " + onFloor.length + " agents · mode " + (isLive ? "LIVE" : "demo / paper only"), tint: "var(--c6B7681)" },
-    { level: "RUNTIME", text: "agent runtime → simulated (" + runtimeName + " selected in setup, not connected yet)", tint: muted },
+    { level: "BOOT", text: "hermes desk " + APP_VERSION + " · " + (core ? "core floor" : "simulated floor") + " · " + onFloor.length + " agents · mode " + (isLive ? "LIVE" : "demo / paper only"), tint: "var(--c6B7681)" },
+    { level: "RUNTIME", text: core ? "agent runtime → hermes core · scripted momentum agents, not AI models (" + runtimeName + " selected in setup, not connected yet)" : "agent runtime → simulated (" + runtimeName + " selected in setup, not connected yet)", tint: muted },
     { level: "FEED", text: "prices → " + feedName, tint: s.feed === "SIMULATED" ? DOWN : muted },
     { level: "FEED", text: "charts → " + (s.chartSrc === "tv" ? "tradingview widget " : "native ") + LBL[s.chartSym].tv + " · candles " + (s.kl[s.chartSym] ? "loaded" : "pending"), tint: muted },
     { level: "FEED", text: "fx → frankfurter (ECB daily) " + (s.fx ? "EUR/USD " + s.fx.toFixed(4) : "pending"), tint: muted },
@@ -196,7 +200,7 @@ export function buildView(s: DeskState): DeskView {
   ];
   const orderLogs = s.fills.slice(0, 8).map((fl) => ({
     level: "ORDER", tint: ACCENT, t: fl.t,
-    text: fl.agent.toLowerCase().replace(" ", ".") + " → " + fl.side.toLowerCase() + " " + PERP(fl.k) + " " + fmtQty(fl.q * scale) + " @ " + fmt(fl.px, LBL[fl.k].dp) + (isLive ? "" : " · paper"),
+    text: fl.agent.toLowerCase().replace(" ", ".") + " → " + fl.side.toLowerCase() + " " + PERP(fl.k) + " " + fmtQty(fl.q * (fl.raw ? 1 : scale)) + " @ " + fmt(fl.px, LBL[fl.k].dp) + (isLive ? "" : " · paper"),
   }));
   const logs: LogRow[] = logBase.concat(orderLogs).map((l, n) => ({
     key: n + ":" + l.level, time: hms(l.t ?? s.now), level: l.level, text: l.text, tint: l.tint,
@@ -223,7 +227,7 @@ export function buildView(s: DeskState): DeskView {
   const approvals: ApprovalView[] = s.approvals.map((a) => {
     const ag = s.agents[a.who];
     const px = s.live[a.k].px;
-    const q = a.q * a.mult * scale;
+    const q = a.q * a.mult * (a.raw ? 1 : scale);
     return {
       id: a.id, side: a.side, sym: PERP(a.k), qty: fmtQty(q), agent: ag.name, role: ag.role, tint: TINTS[ag.grp], why: a.why,
       age: ago(a.t), kindLabel: a.kind === "SUGGEST" ? "SUGGESTION" : "NEEDS APPROVAL",
@@ -253,7 +257,10 @@ export function buildView(s: DeskState): DeskView {
     filters: grpName.map(([id, label]) => ({ id, label, active: s.filter === id })),
     roster, rosterCount: visible.length + " / " + onFloor.length + " AGENTS",
     chat, fills, logs, approvals, nAppr, tabs,
-    centerMeta: "SIMULATED · " + s.seq.length + " EVENTS",
+    strip: core
+      ? "CORE FLOOR · stub agents (not AI) · paper fills · P&L still simulated · not advice"
+      : "SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice",
+    centerMeta: (core ? "CORE" : "SIMULATED") + " · " + s.seq.length + " EVENTS",
     navStr: cm(capital + pnl), pnlStr: money(pnl), pnlColor: pnl >= 0 ? UP : DOWN,
     chart: {
       label: LBL[s.chartSym].label, feedShort: s.feed, last: fmt(s.live[s.chartSym].px, LBL[s.chartSym].dp),
@@ -262,10 +269,10 @@ export function buildView(s: DeskState): DeskView {
       funding: s.funding === null ? "—" : (s.funding >= 0 ? "+" : "") + s.funding.toFixed(4) + "%",
       vol: vol ? cm(vol) : "—",
     },
-    engineState: s.halted ? "HALTED BY OPERATOR" : "SIMULATED FLOOR",
+    engineState: s.halted ? "HALTED BY OPERATOR" : core ? "CORE FLOOR" : "SIMULATED FLOOR",
     engineColor: s.halted ? DOWN : ACCENT,
     feedLabel: "FEED " + s.feed + (s.feed === "SIMULATED" ? "" : " · 5s"),
-    runtimeLabel: "RUNTIME SIMULATED",
+    runtimeLabel: core ? "RUNTIME HERMES CORE (STUB AGENTS)" : "RUNTIME SIMULATED",
     lastFill,
     modeLabel: "HERMES v" + APP_VERSION + " · " + (isLive ? "LIVE" : "DEMO · PAPER ONLY"),
     liveBanner: "LIVE · ORDERS ROUTE TO " + (venueNames || "NO VENUE").toUpperCase() + " · AGENTS ON AUTO PLACE REAL ORDERS",

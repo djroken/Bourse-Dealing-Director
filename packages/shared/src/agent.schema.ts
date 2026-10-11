@@ -6,6 +6,8 @@ export const AgentConfigSchema = z.object({
   model: z.string(),
   temperature: z.number().min(0).max(2),
   autonomy: z.enum(['SUGGEST', 'APPROVE', 'AUTO']),
+  /** Whether this seat originates trade ideas. Seats that only coordinate, research or police risk never do. */
+  trades: z.boolean(),
   mandate: z.string(),
   riskLimits: z.object({
     maxClip: z.number().positive(),

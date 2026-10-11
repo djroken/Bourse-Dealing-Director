@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Agent, type Mode, DEFAULT_SETUP, LIVE_AVAILABLE, LBL, PERP, SEED_AGENTS, SETUP_KEY, type Setup } from "./data";
 import { fmt, fmtQty } from "./format";
+import { applyCoreMsg, coreFloorUrl, onCoreConnected, onCoreLost, parseCoreMsg } from "./core";
 import { VENUE_STEP, persistable } from "./onboarding";
 import { fetchCloses, fetchEurUsd, fetchFundingRate, fetchQuotes } from "./market";
 import {
@@ -64,9 +65,11 @@ export interface DeskOptions {
   tickMs?: number;
   /** Play the scripted floor conversation. Turn off once Hermes Core streams real events. */
   autoplay?: boolean;
+  /** Connect to Hermes Core's agent stream (default on). */
+  core?: boolean;
 }
 
-export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
+export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = true }: DeskOptions = {}) {
   const [s, setS] = useState<DeskState>(() => hydrate(createInitialState(Date.now())));
   const patch = useCallback((p: Patch) => {
     setS((prev) => {
@@ -112,6 +115,55 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
     const id = setInterval(() => patch((st) => tickState(st, autoplay)), Math.max(600, tickMs));
     return () => clearInterval(id);
   }, [patch, tickMs, autoplay]);
+
+  // ---- Hermes Core floor stream ---------------------------------------------
+  // While connected, core's agents drive the floor and the scripted simulation pauses. If core isn't there (or goes
+  // away) the desk stays on the simulated floor and keeps retrying quietly.
+  const coreWs = useRef<WebSocket | null>(null);
+  useEffect(() => {
+    if (!coreEnabled || typeof WebSocket === "undefined") return;
+    let stopped = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let delay = 2000;
+    const connect = () => {
+      if (stopped) return;
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(coreFloorUrl());
+      } catch {
+        patch({ core: "offline" });
+        return;
+      }
+      coreWs.current = ws;
+      ws.onopen = () => {
+        delay = 2000;
+        patch((st) => onCoreConnected(st, Date.now()));
+      };
+      ws.onmessage = (ev) => {
+        let msg;
+        try {
+          msg = parseCoreMsg(JSON.parse(String(ev.data)));
+        } catch {
+          return;
+        }
+        if (msg) patch((st) => applyCoreMsg(st, msg));
+      };
+      ws.onclose = () => {
+        if (coreWs.current === ws) coreWs.current = null;
+        if (stopped) return;
+        patch((st) => onCoreLost(st, Date.now(), st.core));
+        retry = setTimeout(connect, delay);
+        delay = Math.min(delay * 2, 20000);
+      };
+      ws.onerror = () => ws.close();
+    };
+    connect();
+    return () => {
+      stopped = true;
+      clearTimeout(retry);
+      coreWs.current?.close();
+    };
+  }, [patch, coreEnabled]);
 
   // ---- market data ---------------------------------------------------------
   const symRef = useRef(s.chartSym);
@@ -207,7 +259,12 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
       selectAgent: (sel: number | null) => patch({ sel }),
       selectSym: (chartSym: string) => patch({ chartSym }),
       setChartSrc: (chartSrc: "tv" | "native") => patch({ chartSrc }),
-      toggleHalt: () => patch((st) => ({ halted: !st.halted })),
+      toggleHalt: () =>
+        patch((st) => {
+          const ws = coreWs.current;
+          if (st.core === "live" && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: st.halted ? "resume_all" : "halt_all" }));
+          return { halted: !st.halted };
+        }),
 
       setDraft: (draft: string) => patch({ draft }),
       sendDraft: () =>
@@ -293,11 +350,11 @@ export function useDesk({ tickMs = 2200, autoplay = true }: DeskOptions = {}) {
           const now = Date.now();
           const px = st.live[a.k].px;
           const q = a.q * a.mult;
-          const label = a.side + " " + PERP(a.k) + " " + fmtQty(q * bookScale(st.setup));
+          const label = a.side + " " + PERP(a.k) + " " + fmtQty(q * (a.raw ? 1 : bookScale(st.setup)));
           const out: Partial<DeskState> = { approvals: st.approvals.filter((x) => x.id !== id) };
           const first = ag.name.split(" ")[0];
           if (ok) {
-            const fill: Fill = { side: a.side, k: a.k, q, agent: ag.name, t: now, px, status: "FILLED" };
+            const fill: Fill = { side: a.side, k: a.k, q, agent: ag.name, t: now, px, status: "FILLED", ...(a.raw ? { raw: true } : {}) };
             out.fills = [fill].concat(st.fills).slice(0, 40);
             out.seq = st.seq.concat([{
               sysText: "YOU approved " + first + " · " + label + " filled @ " + fmt(px, LBL[a.k].dp) + (st.mode === "live" ? "" : " · paper"),

@@ -333,7 +333,7 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
               <div className="hz-onb-note" role="note">
                 {info.id === "data"
                   ? "Prices come from the public Binance, Coinbase, Hyperliquid and Frankfurter endpoints whichever feeds you tick. The keyed feeds are placeholders for now."
-                  : "Preview. This choice is saved on this device but isn't connected to anything yet: the desk runs a simulated floor. Any key you type stays in this browser tab, is never sent anywhere, and is gone when you reload."}
+                  : "Preview. This choice is saved on this device but isn't connected to anything yet: the desk runs a simulated floor (or core's stub agents). A key you type stays in this browser tab and is gone when you reload, unless you save it to core's encrypted store."}
               </div>
             )}
             {info && (

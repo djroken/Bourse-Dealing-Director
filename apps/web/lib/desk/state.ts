@@ -28,6 +28,8 @@ export interface Fill {
   t: number;
   px: number;
   status: "FILLED" | "SETTLED";
+  /** Quantity is in real asset units (from core), not the prototype's reference book, so it isn't scaled to paper capital. */
+  raw?: boolean;
 }
 export interface Approval {
   id: string;
@@ -39,6 +41,8 @@ export interface Approval {
   t: number;
   kind: Autonomy;
   mult: number;
+  /** Quantity is in real asset units (from core): not scaled to paper capital. */
+  raw?: boolean;
 }
 
 export interface DeskState {
@@ -68,6 +72,8 @@ export interface DeskState {
   funding: number | null;
   fx: number | null;
   gotLive: boolean;
+  /** Link to Hermes Core's agent stream. While "live" the scripted simulation is paused. */
+  core: "connecting" | "live" | "offline";
   seq: SeqEvent[];
   fills: Fill[];
   approvals: Approval[];
@@ -111,7 +117,7 @@ export function createInitialState(now: number): DeskState {
     setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
     mode: "demo", confirmLive: false, liveNotice: false, setupNotice: false, onbStep: 0,
     chartSrc: "tv", chartSym: "BTCUSDT",
-    live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false,
+    live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false, core: "connecting",
     seq, fills: makeFills(live, now),
     approvals: [
       { id: "A1", who: 3, side: "BUY", k: "SOLUSDT", q: 900, why: "SOL ranks top decile on momentum and carry is positive. Confidence 0.68.", t: now - 95000, kind: "SUGGEST", mult: 1 },
@@ -156,7 +162,7 @@ export function tickState(s: DeskState, autoplay: boolean): Partial<DeskState> {
   }
   out.series = s.series.map((ser, i) => (s.agents[i].paused ? ser : ser.slice(1).concat([rawPnl(i, live, s.ref)])));
 
-  if (!s.halted && autoplay && Math.random() < 0.5) {
+  if (!s.halted && autoplay && s.core !== "live" && Math.random() < 0.5) {
     let last: SeqEvent | null = null;
     for (let j = s.seq.length - 1; j >= 0; j--) {
       if (s.seq[j].i !== undefined) { last = s.seq[j]; break; }

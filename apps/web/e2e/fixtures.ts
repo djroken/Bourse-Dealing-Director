@@ -18,6 +18,8 @@ export const test = base.extend<{ firstRun: boolean; errors: string[] }>({
       if (url.startsWith(baseURL ?? "http://localhost") || url.startsWith("data:") || url.startsWith("blob:")) return route.continue();
       return route.abort();
     });
+    // Core is never reachable by default, even if a developer has one running locally: tests that want it mock it.
+    await page.routeWebSocket(/127\.0\.0\.1:4000|localhost:4000/, (ws) => void ws.close());
     if (!firstRun) {
       await page.addInitScript(() => {
         try {

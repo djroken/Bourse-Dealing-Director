@@ -64,6 +64,8 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 
 A `decision` with `riskChecked: false` and `size: 0` is a trade the risk gate vetoed. Schemas live in [`packages/shared`](../packages/shared/src/floor.schema.ts).
 
+The roster is `defaultAgents` in [`packages/shared`](../packages/shared/src/agentSeed.ts), the same eight seats the desk shows (a web test keeps their names, roles, models, temperature, autonomy and mandates identical). Only seats with `trades: true` (Execution Trader, Market Maker, Quant / Signals, Sentiment Desk) emit intents; the others coordinate, research or police risk. The desk matches seats by `role`.
+
 Messages you may send (anything else is ignored; frames over 16 KiB close the connection):
 
 ```jsonc
