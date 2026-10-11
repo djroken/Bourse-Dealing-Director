@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Agent, type Mode, DEFAULT_SETUP, LIVE_AVAILABLE, LBL, PERP, SEED_AGENTS, SETUP_KEY, type Setup } from "./data";
 import { fmt, fmtQty } from "./format";
-import { applyCoreMsg, coreFloorUrl, onCoreConnected, onCoreLost, parseCoreMsg } from "./core";
+import { applyCoreMsg, coreFloorUrl, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "./core";
 import { VENUE_STEP, persistable } from "./onboarding";
 import { fetchCloses, fetchEurUsd, fetchFundingRate, fetchQuotes } from "./market";
 import {
@@ -127,6 +127,32 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
   // While connected, core's agents drive the floor and the scripted simulation pauses. If core isn't there (or goes
   // away) the desk stays on the simulated floor and keeps retrying quietly.
   const coreWs = useRef<WebSocket | null>(null);
+  // Drawer edits wait a moment (so typing a mandate isn't one message per keystroke), then go to core as one change per seat.
+  // While a seat has an unsent edit, core's echo of an older value for that seat is ignored so it can't overwrite what you're typing.
+  type CfgPatch = { autonomy?: string; paused?: boolean; model?: string; temperature?: number; mandate?: string };
+  const cfgPending = useRef(new Map<number, CfgPatch>());
+  const cfgTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const flushCfg = useCallback(() => {
+    clearTimeout(cfgTimer.current);
+    const ws = coreWs.current;
+    const st = stateRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      for (const [i, fields] of cfgPending.current) {
+        const ag = st.agents[i];
+        if (ag) ws.send(JSON.stringify({ type: "configure_agent", role: ag.role, ...fields }));
+      }
+    }
+    cfgPending.current.clear();
+  }, []);
+  const queueCfg = useCallback(
+    (i: number, fields: CfgPatch, now = false) => {
+      cfgPending.current.set(i, { ...(cfgPending.current.get(i) ?? {}), ...fields });
+      clearTimeout(cfgTimer.current);
+      if (now) flushCfg();
+      else cfgTimer.current = setTimeout(flushCfg, 350);
+    },
+    [flushCfg],
+  );
   useEffect(() => {
     if (!coreEnabled || typeof WebSocket === "undefined") return;
     let stopped = false;
@@ -153,7 +179,9 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
         } catch {
           return;
         }
-        if (msg) patch((st) => applyCoreMsg(st, msg));
+        if (!msg) return;
+        if (msg.type === "config" && cfgPending.current.has(seatOf(stateRef.current, msg.role))) return;
+        patch((st) => applyCoreMsg(st, msg));
       };
       ws.onclose = () => {
         if (coreWs.current === ws) coreWs.current = null;
@@ -245,8 +273,18 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
 
   // ---- actions -------------------------------------------------------------
   const actions = useMemo(() => {
-    const patchSel = (p: Partial<Agent>) =>
+    const patchSel = (p: Partial<Agent>) => {
+      const st0 = stateRef.current;
       patch((st) => ({ agents: st.agents.map((a, i) => (i === st.sel ? { ...a, ...p } : a)) }));
+      if (st0.core === "live" && st0.sel !== null) {
+        const f: CfgPatch = {};
+        if (p.autonomy !== undefined) f.autonomy = p.autonomy;
+        if (p.model !== undefined) f.model = p.model;
+        if (p.temp !== undefined) f.temperature = p.temp;
+        if (p.mandate !== undefined && p.mandate.length <= 2000) f.mandate = p.mandate;
+        if (Object.keys(f).length) queueCfg(st0.sel, f);
+      }
+    };
 
     return {
       setTheme: (name: ThemeName) => {
@@ -263,7 +301,10 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
       setMTab: (mTab: MobileTab) => patch({ mTab }),
       openQueue: () => patch({ centerOpen: true, tab: "approvals", mTab: "approvals" }),
       setFilter: (filter: Filter) => patch({ filter }),
-      selectAgent: (sel: number | null) => patch({ sel }),
+      selectAgent: (sel: number | null) => {
+        if (sel === null) flushCfg(); // APPLY / close: send anything still waiting
+        patch({ sel });
+      },
       selectSym: (chartSym: string) => patch({ chartSym }),
       setChartSrc: (chartSrc: "tv" | "native") => patch({ chartSrc }),
       toggleHalt: () => {
@@ -332,9 +373,18 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
         })),
 
       patchSel,
-      pauseSel: () =>
-        patch((st) => ({ agents: st.agents.map((a, i) => (i === st.sel ? { ...a, paused: !a.paused } : a)) })),
-      resetSel: () =>
+      pauseSel: () => {
+        const st0 = stateRef.current;
+        if (st0.sel === null) return;
+        if (st0.core === "live") queueCfg(st0.sel, { paused: !st0.agents[st0.sel]!.paused }, true);
+        patch((st) => ({ agents: st.agents.map((a, i) => (i === st.sel ? { ...a, paused: !a.paused } : a)) }));
+      },
+      resetSel: () => {
+        const st0 = stateRef.current;
+        if (st0.core === "live" && st0.sel !== null) {
+          const d = SEED_AGENTS[st0.sel]!;
+          queueCfg(st0.sel, { autonomy: d.autonomy, model: d.model, temperature: d.temp, mandate: d.mandate, paused: false }, true);
+        }
         patch((st) => {
           if (st.sel === null) return null;
           const d = SEED_AGENTS[st.sel];
@@ -345,7 +395,8 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
                 : a,
             ),
           };
-        }),
+        });
+      },
 
       setApprovalMult: (id: string, mult: number) =>
         patch((st) => ({ approvals: st.approvals.map((a) => (a.id === id ? { ...a, mult } : a)) })),
@@ -391,7 +442,7 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
         });
       },
     };
-  }, [patch]);
+  }, [patch, queueCfg, flushCfg]);
 
   const view = useMemo(() => buildView(s), [s]);
   return { s, view, actions };

@@ -104,3 +104,51 @@ test("the roster shows core's book, and approving an idea sends one order to cor
   await page.locator(".hz-tab", { hasText: "FLOOR CHAT" }).click();
   await expect(page.locator(".hz-log")).toContainText("sent to core for the risk check");
 });
+
+const cfgMsgs = (core: { sent: string[] }) => core.sent.map((m) => JSON.parse(m)).filter((m) => m.type === "configure_agent");
+
+test("drawer edits reach core: autonomy once, mandate debounced, pause sends paused", async ({ page }) => {
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  await page.locator(".hz-agent", { hasText: "Atlas Reyner" }).click();
+  const drawer = page.getByRole("dialog", { name: /Atlas Reyner settings/ });
+
+  await drawer.getByRole("button", { name: "SUGGEST", exact: true }).click();
+  await expect.poll(() => cfgMsgs(core).length).toBe(1);
+  expect(cfgMsgs(core)[0]).toMatchObject({ type: "configure_agent", role: expect.stringMatching(/execution trader/i), autonomy: "SUGGEST" });
+
+  await drawer.getByLabel("Mandate (system prompt)").fill("Only trade BTC.");
+  await page.waitForTimeout(700);
+  const mandates = cfgMsgs(core).filter((m) => m.mandate !== undefined);
+  expect(mandates).toHaveLength(1);
+  expect(mandates[0].mandate).toBe("Only trade BTC.");
+
+  await drawer.getByRole("button", { name: "PAUSE AGENT" }).click();
+  await expect.poll(() => cfgMsgs(core).some((m) => m.paused === true)).toBe(true);
+  await drawer.getByRole("button", { name: "RESUME AGENT" }).click();
+  await expect.poll(() => cfgMsgs(core).some((m) => m.paused === false)).toBe(true);
+});
+
+test("a core config message updates the drawer, and an echo doesn't clobber typing", async ({ page }) => {
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  const cfg = (mandate: string) => ({
+    type: "config", agentId: "TKT-002", role: "Execution Trader", name: "Atlas Reyner", model: "claude-sonnet-4-5",
+    temperature: 0.3, autonomy: "AUTO", mandate, paused: false,
+    riskLimits: { maxClip: 4000, maxLeverage: 3, dailyLossStop: 500 }, ts: Date.now(),
+  });
+  core.send(cfg("From core."));
+  await page.locator(".hz-agent", { hasText: "Atlas Reyner" }).click();
+  const drawer = page.getByRole("dialog", { name: /Atlas Reyner settings/ });
+  await expect(drawer.getByLabel("Mandate (system prompt)")).toHaveValue("From core.");
+  await expect(drawer).toContainText("$4.0k");
+  await expect(drawer).toContainText("-$500");
+
+  const box = drawer.getByLabel("Mandate (system prompt)");
+  await box.fill("Half-typed edit");
+  core.send(cfg("stale echo"));
+  await page.waitForTimeout(150);
+  await expect(box).toHaveValue("Half-typed edit");
+});

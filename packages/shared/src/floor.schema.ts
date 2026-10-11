@@ -50,16 +50,33 @@ export const AgentPnlSchema = z.object({
   ts: z.number(),
 });
 
+/** A seat's current settings. Sent to every client on connect and again whenever a seat is reconfigured. */
+export const AgentConfigMsgSchema = z.object({
+  type: z.literal('config'),
+  agentId: z.string(),
+  role: z.string(),
+  name: z.string(),
+  model: z.string(),
+  temperature: z.number(),
+  autonomy: z.enum(['SUGGEST', 'APPROVE', 'AUTO']),
+  mandate: z.string(),
+  paused: z.boolean(),
+  riskLimits: z.object({ maxClip: z.number(), maxLeverage: z.number(), dailyLossStop: z.number() }),
+  ts: z.number(),
+});
+
 export type AgentLifecycle = z.infer<typeof AgentLifecycleSchema>;
 export type AgentIntent = z.infer<typeof AgentIntentSchema>;
 export type AgentDecision = z.infer<typeof AgentDecisionSchema>;
 export type AgentPnl = z.infer<typeof AgentPnlSchema>;
+export type AgentConfigMsg = z.infer<typeof AgentConfigMsgSchema>;
 
 export type FloorMsg =
   | z.infer<typeof AgentLifecycleSchema>
   | z.infer<typeof AgentIntentSchema>
   | z.infer<typeof AgentDecisionSchema>
-  | z.infer<typeof AgentPnlSchema>;
+  | z.infer<typeof AgentPnlSchema>
+  | z.infer<typeof AgentConfigMsgSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';
