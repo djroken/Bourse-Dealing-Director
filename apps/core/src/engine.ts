@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
+import { applyFill, mark, newBook, type Book } from './book';
 import { clampClip, withinLossStop } from './risk';
 
 /** The slice of a WebSocket the engine needs, so tests can use a plain fake. */
@@ -17,8 +18,9 @@ export interface FloorAgent {
   id: string;
   config: AgentConfig;
   state: AgentState;
-  /** Signed: losses are negative. Nothing writes this yet; the execution layer will. */
+  /** Signed: losses are negative. Realised + unrealised on the paper book; this is what the loss stop reads. */
   dailyPnL: number;
+  book: Book;
 }
 export interface Tick {
   price: number;
@@ -33,6 +35,14 @@ export interface Logger {
 /** Everything a client may send to /agents. Anything else is dropped. */
 export const InboundSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('subscribe'), agentId: z.string().min(1).max(64), subscribe: z.boolean().default(true) }),
+  /** An operator-approved order for a trading seat. Goes through the same risk checks as an agent's own decision. */
+  z.object({
+    type: z.literal('place_order'),
+    role: z.string().min(1).max(64),
+    symbol: z.enum(['BTC-USDT', 'ETH-USDT', 'SOL-USDT']),
+    side: z.enum(['BUY', 'SELL']),
+    size: z.number().positive().finite(),
+  }),
   z.object({ type: z.literal('halt_all') }),
   z.object({ type: z.literal('resume_all') }),
 ]);
@@ -47,10 +57,12 @@ export interface EngineOptions {
 }
 
 /** Stub strategy: 24h momentum. Stands in for a model call; it is not trading advice and is not meant to make money. */
-export function momentumIntent(change24h: number | null, maxClip: number): { side: 'BUY' | 'SELL' | 'HOLD'; size: number; confidence: number } {
+export function momentumIntent(change24h: number | null, maxClipUsd: number, price: number): { side: 'BUY' | 'SELL' | 'HOLD'; size: number; confidence: number } {
   const change = change24h ?? 0;
   const confidence = Math.min(Math.abs(change) / 5, 0.95);
-  const size = clampClip(Math.floor((maxClip * confidence) / 2), maxClip);
+  // maxClip is USD per order. Size is in asset units, rounded down so rounding can never push an order over the clip.
+  const notional = clampClip((maxClipUsd * confidence) / 2, maxClipUsd);
+  const size = Number.isFinite(price) && price > 0 ? Math.floor((notional / price) * 1e4) / 1e4 : 0;
   const side = change < 0 ? 'SELL' : change > 0 ? 'BUY' : 'HOLD';
   return size === 0 ? { side: 'HOLD', size: 0, confidence: Number(confidence.toFixed(2)) } : { side, size, confidence: Number(confidence.toFixed(2)) };
 }
@@ -65,7 +77,9 @@ export function createEngine(opts: EngineOptions = {}) {
     config,
     state: 'running',
     dailyPnL: 0,
+    book: newBook(),
   }));
+  const lastPx = new Map<string, number>();
 
   interface Client {
     ws: FloorSocket;
@@ -99,7 +113,7 @@ export function createEngine(opts: EngineOptions = {}) {
     if (last !== undefined && now() - last < cooldownMs) return;
     lastEval.set(key, now());
 
-    const { side, size, confidence } = momentumIntent(tick.change24h, agent.config.riskLimits.maxClip);
+    const { side, size, confidence } = momentumIntent(tick.change24h, agent.config.riskLimits.maxClip, tick.price);
     const change = tick.change24h ?? 0;
     broadcast({
       type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence,
@@ -110,6 +124,7 @@ export function createEngine(opts: EngineOptions = {}) {
     // SUGGEST and APPROVE agents stop at the intent: a human (or the approvals queue) decides.
     if (agent.config.autonomy !== 'AUTO' || side === 'HOLD') return;
     const ok = withinLossStop(agent.dailyPnL, agent.config.riskLimits.dailyLossStop);
+    if (ok) applyFill(agent.book, symbol, side, size, tick.price);
     broadcast({
       type: 'decision', agentId: agent.id, role: agent.config.role, symbol,
       action: ok ? side : 'HOLD',
@@ -120,6 +135,32 @@ export function createEngine(opts: EngineOptions = {}) {
       ts: now(),
     });
   };
+
+  /** Human-approved order. Rejected (never clamped) if it breaks a limit, so the operator sees exactly what happened. */
+  const placeOrder = (role: string, symbol: string, side: 'BUY' | 'SELL', size: number): void => {
+    const norm = (r: string) => r.toUpperCase().replace(/\s+/g, ' ').trim(); // the Desk shows roles in capitals
+    const agent = agents.find((a) => norm(a.config.role) === norm(role) && a.config.trades);
+    if (!agent) return;
+    const price = lastPx.get(symbol);
+    const veto = (why: string) =>
+      broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: 'HOLD', size: 0, price: price ?? 1, rationale: why, riskChecked: false, ts: now() });
+    if (agent.state !== 'running') return veto('Floor is halted: order not placed');
+    if (price === undefined) return veto('No price for this symbol yet: order not placed');
+    const { maxClip, dailyLossStop } = agent.config.riskLimits;
+    if (size * price > maxClip) return veto(`Order is over the $${maxClip} clip: not placed`);
+    if (!withinLossStop(agent.dailyPnL, dailyLossStop)) return veto('Daily loss stop reached: not placed');
+    applyFill(agent.book, symbol, side, size, price);
+    broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: side, size, price, rationale: 'Approved by operator · within risk limits', riskChecked: true, ts: now() });
+    broadcast(pnlMsg(agent));
+  };
+
+  /** Mark one seat's paper book and tell clients. Halted seats are still marked: halting stops decisions, not prices. */
+  const pnlMsg = (a: FloorAgent): FloorMsg => {
+    const v = mark(a.book, lastPx);
+    a.dailyPnL = v.pnl;
+    return { type: 'pnl', agentId: a.id, role: a.config.role, pnl: v.pnl, exposure: v.exposure, positions: v.positions, ts: now() };
+  };
+  const hasBook = (a: FloorAgent) => a.book.positions.size > 0 || a.book.realized !== 0;
 
   const setAll = (state: 'running' | 'halted'): number => {
     for (const a of agents) {
@@ -147,7 +188,9 @@ export function createEngine(opts: EngineOptions = {}) {
     /** Called by the feed on every price tick. Only the symbol that moved is evaluated. */
     pushTick(symbol: string, tick: Tick): void {
       if (!TRADED_SYMBOLS.includes(symbol)) return;
+      lastPx.set(symbol, tick.price);
       for (const a of agents) evaluate(a, symbol, tick);
+      for (const a of agents) if (hasBook(a)) broadcast(pnlMsg(a));
     },
 
     haltAll,
@@ -182,6 +225,7 @@ export function createEngine(opts: EngineOptions = {}) {
       const client: Client = { ws, subscriptions: new Set() };
       clients.add(client);
       for (const a of agents) ws.send(JSON.stringify(lifecycle(a)));
+      for (const a of agents) if (hasBook(a)) ws.send(JSON.stringify(pnlMsg(a)));
       log.info(`floor client connected (${clients.size})`);
 
       ws.on('message', (raw) => {
@@ -201,6 +245,8 @@ export function createEngine(opts: EngineOptions = {}) {
         if (msg.type === 'subscribe') {
           if (msg.subscribe) client.subscriptions.add(msg.agentId);
           else client.subscriptions.delete(msg.agentId);
+        } else if (msg.type === 'place_order') {
+          placeOrder(msg.role, msg.symbol, msg.side, msg.size);
         } else if (msg.type === 'halt_all') {
           haltAll();
         } else {

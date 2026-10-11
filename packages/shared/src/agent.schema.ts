@@ -10,8 +10,10 @@ export const AgentConfigSchema = z.object({
   trades: z.boolean(),
   mandate: z.string(),
   riskLimits: z.object({
+    /** Largest single order, in USD notional. */
     maxClip: z.number().positive(),
     maxLeverage: z.number().positive(),
+    /** Stop deciding once the day's P&L is down this many USD. */
     dailyLossStop: z.number().positive()
   }),
   tools: z.array(z.string()),

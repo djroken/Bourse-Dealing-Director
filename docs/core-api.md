@@ -62,6 +62,12 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 { "type": "decision",  "agentId": "…", "role": "…", "symbol": "BTC-USDT", "action": "BUY|SELL|HOLD", "size": 0.02, "price": 86712.1, "rationale": "…", "riskChecked": true, "ts": 0 }
 ```
 
+```jsonc
+{ "type": "pnl", "agentId": "…", "role": "…", "pnl": -12.4, "exposure": 4800, "positions": [{ "symbol": "BTC-USDT", "qty": -0.05, "avgPx": 96000 }], "ts": 0 }
+```
+
+`pnl` is a seat's paper book marked to the latest price: realised plus unrealised since core started, in USD (average-cost accounting; negative `qty` is short). It is sent after every tick for seats that have traded, and to a new client on connect. It is also what each seat's daily loss stop reads. Halted seats keep marking.
+
 A `decision` with `riskChecked: false` and `size: 0` is a trade the risk gate vetoed. Schemas live in [`packages/shared`](../packages/shared/src/floor.schema.ts).
 
 The roster is `defaultAgents` in [`packages/shared`](../packages/shared/src/agentSeed.ts), the same eight seats the desk shows (a web test keeps their names, roles, models, temperature, autonomy and mandates identical). Only seats with `trades: true` (Execution Trader, Market Maker, Quant / Signals, Sentiment Desk) emit intents; the others coordinate, research or police risk. The desk matches seats by `role`.
@@ -70,6 +76,7 @@ Messages you may send (anything else is ignored; frames over 16 KiB close the co
 
 ```jsonc
 { "type": "subscribe", "agentId": "…", "subscribe": true }   // only receive this agent's events (subscribe:false to undo)
+{ "type": "place_order", "role": "Quant / Signals", "symbol": "ETH-USDT", "side": "BUY", "size": 0.5 }   // an operator-approved order for a trading seat
 { "type": "halt_all" }
 { "type": "resume_all" }
 ```
@@ -86,9 +93,11 @@ Core is meant to be driven by the local web app only.
 
 If you change `CORE_HOST` to a non-loopback address, put authentication and TLS in front first.
 
+`place_order` fills at core's last price (so you may see a different price from the one on your screen) and goes through the same checks as an agent's own decision. Unlike an agent's order it is **rejected, never clamped**, if it is over the seat's clip, if the floor is halted, if core has no price for the symbol yet, or if the seat is past its loss stop. The result comes back as an ordinary `decision` (`riskChecked: false`, `action: "HOLD"` and the reason in `rationale` when rejected). `role` matches case-insensitively and only trading seats accept orders.
+
 ## Risk gate
 
-Every agent decision passes through `apps/core/src/risk.ts` before it is emitted as checked: the clip is clamped to the agent's `maxClip`, and trading stops once the agent's daily P&L reaches its loss stop. Non-numeric input fails closed (no trade). Only agents on `AUTO` decide; `SUGGEST` and `APPROVE` agents are skipped. HALT ALL overrides everything.
+Every agent decision passes through `apps/core/src/risk.ts` before it is emitted as checked. `maxClip` is the largest single order in **USD notional** (sizes are in asset units, rounded down so they never exceed it), and a seat stops deciding once its daily P&L, read from its paper book, is down by `dailyLossStop` USD. Non-numeric input fails closed (no trade). Only `AUTO` seats decide on their own; `SUGGEST` and `APPROVE` seats stop at an intent that a human can turn into a `place_order`. HALT ALL overrides everything. The seeded limits are sized for a $100k paper book.
 
 ## MCP (Model Context Protocol): planned, not implemented
 

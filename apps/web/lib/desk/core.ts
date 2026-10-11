@@ -2,6 +2,7 @@ import { CORE_URL } from "./secrets";
 import { LBL, PERP, type Side } from "./data";
 import { fmt, fmtQty } from "./format";
 import type { Approval, DeskState, Fill, SeqEvent } from "./state";
+import { walk } from "./format";
 
 /**
  * The Desk's side of Hermes Core's /agents stream. Pure functions: the socket lives in useDesk, everything it receives
@@ -13,6 +14,7 @@ export type CoreStatus = "connecting" | "live" | "offline";
 export type CoreMsg =
   | { type: "lifecycle"; agentId: string; role: string; status: "initialized" | "running" | "paused" | "halted"; ts: number }
   | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number }
+  | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number };
 
 export const coreFloorUrl = (base: string = CORE_URL): string => base.replace(/^http/, "ws").replace(/\/$/, "") + "/agents";
@@ -29,6 +31,15 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
   if (raw.type === "lifecycle") {
     const st = raw.status;
     return st === "initialized" || st === "running" || st === "paused" || st === "halted" ? { type: "lifecycle", agentId, role, status: st, ts } : null;
+  }
+  if (raw.type === "pnl") {
+    if (!num(raw.pnl) || !num(raw.exposure) || raw.exposure < 0 || !Array.isArray(raw.positions) || raw.positions.length > 16) return null;
+    const positions: Array<{ symbol: string; qty: number; avgPx: number }> = [];
+    for (const p of raw.positions) {
+      if (!isObj(p) || !str(p.symbol, 32) || !num(p.qty) || !num(p.avgPx)) return null;
+      positions.push({ symbol: p.symbol, qty: p.qty, avgPx: p.avgPx });
+    }
+    return { type: "pnl", agentId, role, pnl: raw.pnl, exposure: raw.exposure, positions, ts };
   }
   if (!str(raw.symbol, 32) || !str(raw.rationale)) return null;
   if (raw.type === "intent") {
@@ -60,6 +71,8 @@ export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
     seq: [{ sysText: "Connected to Hermes Core. The scripted conversation is off; you are seeing events from core's stub agents.", t: now }],
     fills: [],
     approvals: [],
+    coreBook: {},
+    series: s.series.map(() => walk(26, 1, 0).map(() => 0)),
   };
 }
 
@@ -75,6 +88,16 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
     if (i < 0) return null;
     const paused = m.status === "halted" || m.status === "paused";
     return s.agents[i]!.paused === paused ? null : { agents: s.agents.map((a, j) => (j === i ? { ...a, paused } : a)) };
+  }
+
+  if (m.type === "pnl") {
+    const j = seatOf(s, m.role);
+    if (j < 0) return null;
+    const positions = m.positions.flatMap((p) => {
+      const key = deskSym(p.symbol);
+      return key ? [{ k: key, qty: p.qty }] : [];
+    });
+    return { coreBook: { ...s.coreBook, [j]: { pnl: m.pnl, exposure: m.exposure, positions } } };
   }
 
   const i = seatOf(s, m.role);

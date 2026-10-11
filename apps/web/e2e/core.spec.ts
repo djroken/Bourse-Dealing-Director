@@ -78,3 +78,29 @@ test("with no core running the desk is the simulated floor and says so", async (
   await expect(page.locator(".hz-sim")).toContainText("SIMULATED FLOOR");
   await expect(page.locator(".hz-log")).not.toContainText("Hermes Core");
 });
+
+test("the roster shows core's book, and approving an idea sends one order to core", async ({ page }) => {
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  const now = Date.now();
+  core.send({ type: "pnl", agentId: "TKT-002", role: "Execution Trader", pnl: 412.4, exposure: 9100, positions: [{ symbol: "BTC-USDT", qty: 0.1, avgPx: 91000 }], ts: now });
+  const atlas = page.locator(".hz-agent", { hasText: "Atlas Reyner" });
+  await expect(atlas).toContainText("+$412");
+  await expect(atlas).toContainText("$9.1k L");
+  await expect(page.locator(".hz-agent", { hasText: "Vega Ostrowski" })).not.toContainText("$");
+
+  core.send({ type: "intent", agentId: "TKT-004", role: "Quant / Signals", symbol: "ETH-USDT", side: "BUY", size: 0.5, confidence: 0.6, rationale: "stub momentum", ts: now + 1 });
+  await page.locator(".hz-tab", { hasText: "APPROVALS" }).click();
+  const card = page.locator(".hz-appr", { hasText: "ETH-PERP" });
+  await expect(card).toHaveCount(1);
+  await card.getByRole("button", { name: "PLACE ORDER" }).click();
+  await expect(page.locator(".hz-appr")).toHaveCount(0);
+  await expect.poll(() => core.sent.filter((m) => JSON.parse(m).type === "place_order").length).toBe(1);
+  const order = JSON.parse(core.sent.find((m) => JSON.parse(m).type === "place_order")!);
+  expect({ ...order, role: String(order.role).toLowerCase() }).toEqual({ type: "place_order", role: "quant / signals", symbol: "ETH-USDT", side: "BUY", size: 0.5 });
+  await page.waitForTimeout(500);
+  expect(core.sent.filter((m) => JSON.parse(m).type === "place_order")).toHaveLength(1); // never twice
+  await page.locator(".hz-tab", { hasText: "FLOOR CHAT" }).click();
+  await expect(page.locator(".hz-log")).toContainText("sent to core for the risk check");
+});

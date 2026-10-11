@@ -3,7 +3,7 @@ import type { AgentConfig } from "./agent.schema";
 
 /**
  * The eight seats. Name, role, model, temperature, autonomy and mandate mirror the Desk's roster in
- * apps/web/lib/desk/data.ts (a web test keeps them in step); risk limits and tools are core's own, in asset units.
+ * apps/web/lib/desk/data.ts (a web test keeps them in step); risk limits and tools are core's own: maxClip and dailyLossStop are USD, sized for a $100k paper book.
  */
 export const defaultAgents: AgentConfig[] = [
   {
@@ -15,7 +15,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: false,
     mandate: "Own the floor's risk budget. Arbitrate between desks, size the house view, and escalate anything above 40% of daily VaR.",
     riskLimits: {
-      maxClip: 10,
+      maxClip: 10000,
       maxLeverage: 5,
       dailyLossStop: 1000
     },
@@ -31,7 +31,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: true,
     mandate: "Work parent orders with minimal impact. Prefer passive fills; escalate if slippage exceeds 6bp of notional.",
     riskLimits: {
-      maxClip: 5,
+      maxClip: 5000,
       maxLeverage: 10,
       dailyLossStop: 500
     },
@@ -47,7 +47,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: true,
     mandate: "Two-sided quotes on the top four perps. Widen on realised-vol spikes and never carry inventory through funding.",
     riskLimits: {
-      maxClip: 20,
+      maxClip: 3000,
       maxLeverage: 2,
       dailyLossStop: 200
     },
@@ -63,7 +63,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: true,
     mandate: "Maintain the cross-sectional momentum and carry signals. Publish a ranked book every 15 minutes with confidence bands.",
     riskLimits: {
-      maxClip: 5,
+      maxClip: 4000,
       maxLeverage: 5,
       dailyLossStop: 300
     },
@@ -79,7 +79,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: false,
     mandate: "Read the wire and rank headlines by tradable impact. Push only what changes a position, with the source attached.",
     riskLimits: {
-      maxClip: 2,
+      maxClip: 1000,
       maxLeverage: 1,
       dailyLossStop: 50
     },
@@ -95,7 +95,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: false,
     mandate: "Watch large wallet flow, lending utilisation and bridge activity. Flag anything that moves a DeFi position's liquidation band.",
     riskLimits: {
-      maxClip: 2,
+      maxClip: 1000,
       maxLeverage: 1,
       dailyLossStop: 50
     },
@@ -111,7 +111,7 @@ export const defaultAgents: AgentConfig[] = [
     trades: false,
     mandate: "Hard veto on any breach of clip size, leverage or loss stop. Re-check portfolio VaR every tick and publish a breach log.",
     riskLimits: {
-      maxClip: 1,
+      maxClip: 1000,
       maxLeverage: 1,
       dailyLossStop: 5000
     },
@@ -127,9 +127,9 @@ export const defaultAgents: AgentConfig[] = [
     trades: true,
     mandate: "Score crowd positioning from social and funding data. Fade extremes; stay silent when the signal is inside noise bands.",
     riskLimits: {
-      maxClip: 2,
+      maxClip: 2000,
       maxLeverage: 1,
-      dailyLossStop: 50
+      dailyLossStop: 150
     },
     tools: ["web_search"],
     feeds: ["news"]

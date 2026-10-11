@@ -78,6 +78,13 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
     });
   }, []);
 
+  // Latest state for event handlers that must talk to the socket: side effects never go inside a state updater,
+  // because React may run an updater twice (StrictMode), and an order must be sent exactly once.
+  const stateRef = useRef(s);
+  useEffect(() => {
+    stateRef.current = s;
+  }, [s]);
+
   // ---- theme ---------------------------------------------------------------
   const appliedKeys = useRef<string[]>([]);
   const resolved = resolveTheme(s);
@@ -259,12 +266,12 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
       selectAgent: (sel: number | null) => patch({ sel }),
       selectSym: (chartSym: string) => patch({ chartSym }),
       setChartSrc: (chartSrc: "tv" | "native") => patch({ chartSrc }),
-      toggleHalt: () =>
-        patch((st) => {
-          const ws = coreWs.current;
-          if (st.core === "live" && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: st.halted ? "resume_all" : "halt_all" }));
-          return { halted: !st.halted };
-        }),
+      toggleHalt: () => {
+        const st = stateRef.current;
+        const ws = coreWs.current;
+        if (st.core === "live" && ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: st.halted ? "resume_all" : "halt_all" }));
+        patch((cur) => ({ halted: !cur.halted }));
+      },
 
       setDraft: (draft: string) => patch({ draft }),
       sendDraft: () =>
@@ -342,7 +349,24 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
 
       setApprovalMult: (id: string, mult: number) =>
         patch((st) => ({ approvals: st.approvals.map((a) => (a.id === id ? { ...a, mult } : a)) })),
-      decide: (id: string, ok: boolean) =>
+      decide: (id: string, ok: boolean) => {
+        // Orders from core's agents are approved by core: send once, outside any state updater.
+        const st0 = stateRef.current;
+        const a0 = st0.approvals.find((x) => x.id === id);
+        const ws = coreWs.current;
+        if (ok && a0?.raw && st0.core === "live" && ws && ws.readyState === WebSocket.OPEN) {
+          const ag = st0.agents[a0.who]!;
+          const size = Math.floor(a0.q * a0.mult * 1e4) / 1e4;
+          ws.send(JSON.stringify({ type: "place_order", role: ag.role, symbol: a0.k.replace("USDT", "-USDT"), side: a0.side, size }));
+          patch((st) => ({
+            approvals: st.approvals.filter((x) => x.id !== id),
+            seq: st.seq.concat([{
+              sysText: "YOU approved " + ag.name.split(" ")[0] + " · " + a0.side + " " + PERP(a0.k) + " " + fmtQty(size) + " · sent to core for the risk check",
+              t: Date.now(),
+            }]).slice(-80),
+          }));
+          return;
+        }
         patch((st) => {
           const a = st.approvals.find((x) => x.id === id);
           if (!a) return null;
@@ -364,7 +388,8 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
             out.seq = st.seq.concat([{ sysText: "YOU rejected " + first + " · " + label, t: now }]).slice(-80);
           }
           return out;
-        }),
+        });
+      },
     };
   }, [patch]);
 
