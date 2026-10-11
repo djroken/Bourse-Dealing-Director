@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema } from 'shared';
+import { AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema } from 'shared';
 import { InboundSchema, createEngine, momentumIntent, type FloorSocket } from '../src/engine';
 
 class FakeSocket implements FloorSocket {
@@ -38,17 +38,24 @@ function setup(cooldownMs = 15_000) {
 
 describe('momentumIntent', () => {
   it('buys positive momentum, sells negative, holds flat', () => {
-    expect(momentumIntent(4, 10).side).toBe('BUY');
-    expect(momentumIntent(-4, 10).side).toBe('SELL');
-    expect(momentumIntent(0, 10)).toMatchObject({ side: 'HOLD', size: 0 });
-    expect(momentumIntent(null, 10)).toMatchObject({ side: 'HOLD', size: 0 });
+    expect(momentumIntent(4, 1000, 100).side).toBe('BUY');
+    expect(momentumIntent(-4, 1000, 100).side).toBe('SELL');
+    expect(momentumIntent(0, 1000, 100)).toMatchObject({ side: 'HOLD', size: 0 });
+    expect(momentumIntent(null, 1000, 100)).toMatchObject({ side: 'HOLD', size: 0 });
   });
-  it('never exceeds the clip and scales with confidence', () => {
-    expect(momentumIntent(50, 10).size).toBeLessThanOrEqual(10);
-    expect(momentumIntent(5, 10).size).toBeGreaterThan(momentumIntent(1, 10).size);
+  it('sizes in asset units but caps the order at the USD clip, at any price', () => {
+    for (const price of [0.5, 3.7, 100, 3421.2, 96412.5]) {
+      const { size } = momentumIntent(50, 1000, price);
+      expect(size * price, `price ${price}`).toBeLessThanOrEqual(1000);
+    }
+    expect(momentumIntent(50, 1000, 100).size).toBeGreaterThan(0);
   });
-  it('turns a rounded-down zero size into HOLD instead of a zero-size BUY', () => {
-    expect(momentumIntent(0.01, 10)).toMatchObject({ side: 'HOLD', size: 0 });
+  it('scales with confidence', () => {
+    expect(momentumIntent(5, 1000, 100).size).toBeGreaterThan(momentumIntent(1, 1000, 100).size);
+  });
+  it('holds rather than emit a zero-size order, and on a bad price', () => {
+    expect(momentumIntent(0.01, 1000, 96412)).toMatchObject({ side: 'HOLD', size: 0 });
+    for (const bad of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) expect(momentumIntent(4, 1000, bad), String(bad)).toMatchObject({ side: 'HOLD', size: 0 });
   });
 });
 
@@ -223,7 +230,7 @@ describe('contract with packages/shared', () => {
     engine.pushTick('SOL-USDT', tick(2));
     engine.haltAll();
     engine.resumeAll();
-    const schemas = { lifecycle: AgentLifecycleSchema, intent: AgentIntentSchema, decision: AgentDecisionSchema } as const;
+    const schemas = { lifecycle: AgentLifecycleSchema, intent: AgentIntentSchema, decision: AgentDecisionSchema, pnl: AgentPnlSchema } as const;
     expect(ws.sent.length).toBeGreaterThan(30);
     for (const m of ws.sent) {
       const schema = schemas[m.type as keyof typeof schemas];
@@ -231,5 +238,118 @@ describe('contract with packages/shared', () => {
       const r = schema.safeParse(m);
       expect(r.success, JSON.stringify(m) + ' ' + (r.success ? '' : r.error.message)).toBe(true);
     }
+  });
+});
+
+describe('paper book and P&L', () => {
+  const atlas = (engine: ReturnType<typeof createEngine>) => engine.agents.find((a) => a.config.role === 'Execution Trader')!;
+  const last = (ws: FakeSocket, id: string) => ws.of('pnl').filter((m) => m.agentId === id).at(-1)!;
+
+  it('a filled decision opens a position, and the pnl message matches the shared schema', () => {
+    const { engine, ws } = setup(0);
+    engine.pushTick('BTC-USDT', { price: 100, change24h: 3, source: 'binance' });
+    const m = last(ws, atlas(engine).id);
+    expect(() => AgentPnlSchema.parse(m)).not.toThrow();
+    expect(m.positions).toEqual([{ symbol: 'BTC-USDT', qty: expect.any(Number), avgPx: 100 }]);
+    expect(m.pnl).toBe(0);
+    expect(m.exposure).toBeGreaterThan(0);
+  });
+  it('marks to market as the price moves: long gains when price rises, and the loss stop reads it', () => {
+    const { engine, ws } = setup(0);
+    engine.pushTick('BTC-USDT', { price: 100, change24h: 3, source: 'binance' });
+    const qty = (last(ws, atlas(engine).id).positions as Array<{ qty: number }>)[0]!.qty;
+    expect(qty).toBeGreaterThan(0);
+    engine.pushTick('BTC-USDT', { price: 110, change24h: 0, source: 'binance' }); // flat momentum: no new trade
+    expect(last(ws, atlas(engine).id).pnl).toBeCloseTo(qty * 10, 6);
+    expect(atlas(engine).dailyPnL).toBeCloseTo(qty * 10, 6);
+  });
+  it('a seat that loses past its stop is vetoed, with no further fills', () => {
+    const { engine, ws } = setup(0);
+    engine.pushTick('BTC-USDT', { price: 100, change24h: 4, source: 'binance' }); // buys
+    engine.pushTick('BTC-USDT', { price: 40, change24h: 4, source: 'binance' }); // price collapses: unrealised loss >> $500 stop
+    expect(atlas(engine).dailyPnL).toBeLessThan(-atlas(engine).config.riskLimits.dailyLossStop);
+    ws.sent.length = 0;
+    engine.pushTick('BTC-USDT', { price: 40, change24h: 4, source: 'binance' });
+    const d = ws.of('decision').filter((m) => m.agentId === atlas(engine).id);
+    expect(d).toHaveLength(1);
+    expect(d[0]).toMatchObject({ action: 'HOLD', size: 0, riskChecked: false });
+    expect(Number(last(ws, atlas(engine).id).pnl)).toBeLessThan(0);
+  });
+  it('halting stops decisions but positions keep marking', () => {
+    const { engine, ws } = setup(0);
+    engine.pushTick('BTC-USDT', { price: 100, change24h: 3, source: 'binance' });
+    engine.haltAll();
+    ws.sent.length = 0;
+    engine.pushTick('BTC-USDT', { price: 90, change24h: 3, source: 'binance' });
+    expect(ws.of('decision')).toHaveLength(0);
+    expect(last(ws, atlas(engine).id).pnl).toBeLessThan(0);
+  });
+  it('seats that never trade never get a book', () => {
+    const { engine, ws } = setup(0);
+    engine.pushTick('BTC-USDT', { price: 100, change24h: 3, source: 'binance' });
+    const nonTraders = new Set(engine.agents.filter((a) => !a.config.trades).map((a) => a.id));
+    expect(ws.of('pnl').some((m) => nonTraders.has(String(m.agentId)))).toBe(false);
+  });
+  it('a client that connects later is told the current books straight away', () => {
+    const { engine } = setup(0);
+    engine.pushTick('BTC-USDT', { price: 100, change24h: 3, source: 'binance' });
+    const late = new FakeSocket();
+    engine.addClient(late);
+    expect(late.of('pnl').length).toBeGreaterThan(0);
+  });
+});
+
+describe('operator orders (place_order)', () => {
+  const order = (over: Record<string, unknown> = {}) => JSON.stringify({ type: 'place_order', role: 'Quant / Signals', symbol: 'BTC-USDT', side: 'BUY', size: 1, ...over });
+  const prime = () => {
+    const s = setup(0);
+    s.engine.pushTick('BTC-USDT', { price: 100, change24h: 0, source: 'binance' }); // flat: gives core a price, no agent trades
+    s.ws.sent.length = 0;
+    return s;
+  };
+  const quant = (engine: ReturnType<typeof createEngine>) => engine.agents.find((a) => a.config.role === 'Quant / Signals')!;
+
+  it('fills at core\'s last price, checks risk, and reports the new book', () => {
+    const { engine, ws } = prime();
+    ws.emit('message', order({ size: 5 }));
+    expect(ws.of('decision')).toHaveLength(1);
+    expect(ws.of('decision')[0]).toMatchObject({ action: 'BUY', size: 5, price: 100, riskChecked: true });
+    expect(ws.of('pnl').at(-1)).toMatchObject({ agentId: quant(engine).id, exposure: 500 });
+    expect(() => AgentDecisionSchema.parse(ws.of('decision')[0])).not.toThrow();
+  });
+  it('matches the seat by role regardless of case and spacing (the Desk sends capitals)', () => {
+    const { ws } = prime();
+    ws.emit('message', order({ role: 'QUANT  /  SIGNALS', size: 1 }));
+    expect(ws.of('decision')[0]).toMatchObject({ action: 'BUY', riskChecked: true });
+  });
+  it('refuses, and does not clamp, an order over the clip', () => {
+    const { engine, ws } = prime();
+    const clip = quant(engine).config.riskLimits.maxClip;
+    ws.emit('message', order({ size: clip / 100 + 1 }));
+    expect(ws.of('decision')[0]).toMatchObject({ action: 'HOLD', size: 0, riskChecked: false });
+    expect(quant(engine).book.positions.size).toBe(0);
+  });
+  it('refuses when halted, with no price, or past the loss stop', () => {
+    const a = prime();
+    a.engine.haltAll();
+    a.ws.sent.length = 0;
+    a.ws.emit('message', order());
+    expect(a.ws.of('decision')[0]).toMatchObject({ action: 'HOLD', riskChecked: false });
+
+    const b = prime();
+    b.ws.emit('message', order({ symbol: 'ETH-USDT' })); // never priced
+    expect(b.ws.of('decision')[0]).toMatchObject({ action: 'HOLD', riskChecked: false });
+
+    const c = prime();
+    c.engine.setDailyPnL(quant(c.engine).id, -1e9);
+    c.ws.emit('message', order());
+    expect(c.ws.of('decision')[0]).toMatchObject({ action: 'HOLD', riskChecked: false });
+    expect(quant(c.engine).book.positions.size).toBe(0);
+  });
+  it('ignores seats that never trade and malformed orders', () => {
+    const { ws } = prime();
+    ws.emit('message', order({ role: 'Risk Officer' }));
+    for (const bad of [{ size: -1 }, { size: 0 }, { symbol: 'DOGE-USDT' }, { side: 'HOLD' }, { size: 'lots' }]) ws.emit('message', order(bad));
+    expect(ws.sent).toHaveLength(0);
   });
 });

@@ -37,14 +37,29 @@ export const AgentDecisionSchema = z.object({
   ts: z.number(),
 });
 
+/** A seat's paper book, marked to the latest price. Amounts in USD, quantities in asset units (negative = short). */
+export const AgentPnlSchema = z.object({
+  type: z.literal('pnl'),
+  agentId: z.string(),
+  role: z.string(),
+  /** Realised + unrealised since core started. */
+  pnl: z.number(),
+  /** Sum of |qty| x last price across open positions. */
+  exposure: z.number().nonnegative(),
+  positions: z.array(z.object({ symbol: z.string(), qty: z.number(), avgPx: z.number() })),
+  ts: z.number(),
+});
+
 export type AgentLifecycle = z.infer<typeof AgentLifecycleSchema>;
 export type AgentIntent = z.infer<typeof AgentIntentSchema>;
 export type AgentDecision = z.infer<typeof AgentDecisionSchema>;
+export type AgentPnl = z.infer<typeof AgentPnlSchema>;
 
 export type FloorMsg =
   | z.infer<typeof AgentLifecycleSchema>
   | z.infer<typeof AgentIntentSchema>
-  | z.infer<typeof AgentDecisionSchema>;
+  | z.infer<typeof AgentDecisionSchema>
+  | z.infer<typeof AgentPnlSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';

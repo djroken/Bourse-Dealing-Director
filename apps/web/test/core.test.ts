@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, defaultAgents } from "../../../packages/shared/src";
+import { AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from "../../../packages/shared/src";
 import { SEED_AGENTS } from "../lib/desk/data";
 import { applyCoreMsg, coreFloorUrl, deskSym, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "../lib/desk/core";
 import { createInitialState, tickState, type DeskState } from "../lib/desk/state";
+import { buildView } from "../lib/desk/view";
 
 const base = (): DeskState => createInitialState(1_000_000);
 const seat = (name: string) => SEED_AGENTS.findIndex((a) => a.name.startsWith(name));
@@ -12,6 +13,11 @@ const intent = (name: string, over: Record<string, unknown> = {}) => ({
 });
 const decision = (name: string, over: Record<string, unknown> = {}) => ({
   type: "decision", agentId: "TKT-002", role: roleOf(name), symbol: "ETH-USDT", action: "SELL", size: 3, price: 3400, rationale: "Within risk limits", riskChecked: true, ts: 6, ...over,
+});
+
+const pnl = (name: string, over: Record<string, unknown> = {}) => ({
+  type: "pnl", agentId: "TKT-002", role: roleOf(name), pnl: -125.5, exposure: 4800,
+  positions: [{ symbol: "BTC-USDT", qty: -0.05, avgPx: 96000 }], ts: 7, ...over,
 });
 
 describe("roster contract with core", () => {
@@ -39,6 +45,7 @@ describe("parseCoreMsg", () => {
       AgentLifecycleSchema.parse({ type: "lifecycle", agentId: "TKT-001", role: "Dealing Director", status: "running", ts: 1 }),
       AgentIntentSchema.parse(intent("Pico")),
       AgentDecisionSchema.parse(decision("Atlas")),
+      AgentPnlSchema.parse(pnl("Atlas")),
     ];
     for (const m of msgs) expect(parseCoreMsg(m), m.type).toMatchObject({ type: m.type });
   });
@@ -46,6 +53,8 @@ describe("parseCoreMsg", () => {
     null, 5, "x", [], {}, { type: "lifecycle" },
     { type: "lifecycle", agentId: "a", role: "r", status: "exploded", ts: 1 },
     intent("Pico", { side: "YOLO" }), intent("Pico", { size: -1 }), intent("Pico", { size: Number.NaN }), intent("Pico", { symbol: 7 }),
+    pnl("Atlas", { exposure: -1 }), pnl("Atlas", { pnl: Number.NaN }), pnl("Atlas", { positions: "none" }), pnl("Atlas", { positions: [{ symbol: "BTC-USDT", qty: "x", avgPx: 1 }] }),
+    pnl("Atlas", { positions: Array.from({ length: 40 }, () => ({ symbol: "BTC-USDT", qty: 1, avgPx: 1 })) }),
     decision("Atlas", { price: 0 }), decision("Atlas", { riskChecked: "yes" }), decision("Atlas", { rationale: "x".repeat(5000) }),
     { ...intent("Pico"), type: "order" },
   ])("rejects %j", (bad) => expect(parseCoreMsg(bad)).toBeNull());
@@ -90,6 +99,36 @@ describe("applyCoreMsg", () => {
   });
 });
 
+describe("core P&L", () => {
+  const live = (): DeskState => ({ ...base(), core: "live" });
+  it("stores a seat's book, drops symbols the desk doesn't list", () => {
+    const m = parseCoreMsg(pnl("Atlas", { positions: [{ symbol: "BTC-USDT", qty: -0.05, avgPx: 96000 }, { symbol: "DOGE-USDT", qty: 9, avgPx: 1 }] }))!;
+    const p = applyCoreMsg(live(), m)!;
+    expect(p.coreBook![seat("Atlas")]).toEqual({ pnl: -125.5, exposure: 4800, positions: [{ k: "BTCUSDT", qty: -0.05 }] });
+  });
+  it("the roster shows core's numbers (and a short suffix from the net position), not the seeded ones", () => {
+    let s = live();
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(pnl("Atlas"))!)! };
+    const card = buildView(s).roster.find((c) => c.name === "Atlas Reyner")!;
+    expect(card.pnl).toBe("-$125");
+    expect(card.exposure).toMatch(/S$/);
+    const quiet = buildView(s).roster.find((c) => c.name === "Vega Ostrowski")!;
+    expect([quiet.pnl, quiet.exposure]).toEqual(["—", "—"]);
+  });
+  it("session P&L and NAV in the header are core's too", () => {
+    let s = live();
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(pnl("Atlas", { pnl: 300 }))!)! };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(pnl("Kite", { agentId: "TKT-003", pnl: -100 }))!)! };
+    expect(buildView(s).pnlStr).toBe("+$200");
+  });
+  it("sparklines follow core's P&L while connected", () => {
+    let s = live();
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(pnl("Atlas", { pnl: 50 }))!)! };
+    const next = tickState(s, true).series![seat("Atlas")]!;
+    expect(next.at(-1)).toBe(50);
+  });
+});
+
 describe("connection lifecycle", () => {
   it("connecting wipes the scripted demo content; the simulation then stops playing", () => {
     const s0 = base();
@@ -98,6 +137,8 @@ describe("connection lifecycle", () => {
     expect(s.core).toBe("live");
     expect(s.fills).toEqual([]);
     expect(s.approvals).toEqual([]);
+    expect(s.coreBook).toEqual({});
+    expect(s.series.every((ser) => ser.every((v) => v === 0))).toBe(true);
     const seen = new Set<number>();
     for (let i = 0; i < 60; i++) seen.add(tickState(s, true).seq?.length ?? -1);
     expect(seen).toEqual(new Set([-1])); // never plays a scripted line

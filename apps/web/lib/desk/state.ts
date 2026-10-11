@@ -45,6 +45,13 @@ export interface Approval {
   raw?: boolean;
 }
 
+/** A seat's paper book as reported by core. P&L and exposure are USD; positions are asset units keyed by desk symbol. */
+export interface CoreBook {
+  pnl: number;
+  exposure: number;
+  positions: Array<{ k: string; qty: number }>;
+}
+
 export interface DeskState {
   agents: Agent[];
   series: number[][];
@@ -74,6 +81,8 @@ export interface DeskState {
   gotLive: boolean;
   /** Link to Hermes Core's agent stream. While "live" the scripted simulation is paused. */
   core: "connecting" | "live" | "offline";
+  /** Per-seat books from core, by seat index. Only seats that have traded appear. */
+  coreBook: Record<number, CoreBook>;
   seq: SeqEvent[];
   fills: Fill[];
   approvals: Approval[];
@@ -117,7 +126,7 @@ export function createInitialState(now: number): DeskState {
     setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
     mode: "demo", confirmLive: false, liveNotice: false, setupNotice: false, onbStep: 0,
     chartSrc: "tv", chartSym: "BTCUSDT",
-    live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false, core: "connecting",
+    live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false, core: "connecting", coreBook: {},
     seq, fills: makeFills(live, now),
     approvals: [
       { id: "A1", who: 3, side: "BUY", k: "SOLUSDT", q: 900, why: "SOL ranks top decile on momentum and carry is positive. Confidence 0.68.", t: now - 95000, kind: "SUGGEST", mult: 1 },
@@ -160,7 +169,9 @@ export function tickState(s: DeskState, autoplay: boolean): Partial<DeskState> {
     }
     out.live = live;
   }
-  out.series = s.series.map((ser, i) => (s.agents[i].paused ? ser : ser.slice(1).concat([rawPnl(i, live, s.ref)])));
+  out.series = s.series.map((ser, i) =>
+    s.agents[i].paused ? ser : ser.slice(1).concat([s.core === "live" ? (s.coreBook[i]?.pnl ?? 0) : rawPnl(i, live, s.ref)]),
+  );
 
   if (!s.halted && autoplay && s.core !== "live" && Math.random() < 0.5) {
     let last: SeqEvent | null = null;

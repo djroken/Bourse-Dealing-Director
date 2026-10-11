@@ -119,13 +119,16 @@ export function buildView(s: DeskState): DeskView {
   const roster: AgentCard[] = visible.map(({ a, i }) => {
     const p = POS[i];
     const raw = rawPnl(i, s.live, s.ref);
+    const cb = core ? s.coreBook[i] : undefined;
+    const net = cb ? cb.positions.reduce((x, q) => x + q.qty * s.live[q.k]!.px, 0) : 0;
     const statusColor = a.paused ? "var(--cFFC078)" : a.grp === "risk" ? "var(--c9AA5B1)" : ACCENT;
     return {
       idx: i, name: a.name, role: a.role, model: a.model, autonomy: a.autonomy,
       initials: a.name.split(" ").map((w) => w[0]).join(""),
       tint: TINTS[a.grp], status: a.paused ? "PAUSED" : a.status, statusColor,
-      pnl: p ? money(raw * scale) : "—", pnlColor: p ? (raw >= 0 ? UP : DOWN) : MUTED,
-      exposure: p ? cm(p.q * s.live[p.k].px * scale) + (p.q < 0 ? " S" : " L") : "—",
+      pnl: core ? (cb ? money(cb.pnl) : "—") : p ? money(raw * scale) : "—",
+      pnlColor: core ? (cb ? (cb.pnl >= 0 ? UP : DOWN) : MUTED) : p ? (raw >= 0 ? UP : DOWN) : MUTED,
+      exposure: core ? (cb && cb.exposure > 0 ? cm(cb.exposure) + (net < 0 ? " S" : " L") : "—") : p ? cm(p.q * s.live[p.k].px * scale) + (p.q < 0 ? " S" : " L") : "—",
       spark: path(s.series[i], 200, 34, false), area: path(s.series[i], 200, 34, true),
       isAuto: a.autonomy === "AUTO",
     };
@@ -207,12 +210,14 @@ export function buildView(s: DeskState): DeskView {
   }));
 
   const sessionRaw = onFloor.reduce((x, o) => x + rawPnl(o.i, s.live, s.ref), 0);
-  const pnl = sessionRaw * scale;
+  const pnl = core ? onFloor.reduce((x, o) => x + (s.coreBook[o.i]?.pnl ?? 0), 0) : sessionRaw * scale;
 
   const closes = s.kl[s.chartSym];
   const series = closes ? closes.slice(0, -1).concat([s.live[s.chartSym].px]) : walk(120, 9931, 0.12);
   const chartUp = series[series.length - 1] >= series[0];
-  const netQ = onFloor.reduce((x, o) => x + (POS[o.i] && POS[o.i]!.k === s.chartSym ? POS[o.i]!.q * scale : 0), 0);
+  const netQ = core
+    ? onFloor.reduce((x, o) => x + (s.coreBook[o.i]?.positions.find((q) => q.k === s.chartSym)?.qty ?? 0), 0)
+    : onFloor.reduce((x, o) => x + (POS[o.i] && POS[o.i]!.k === s.chartSym ? POS[o.i]!.q * scale : 0), 0);
   const vol = s.live[s.chartSym].vol;
   const light = resolved === "light";
   const tvSrc =
@@ -258,7 +263,7 @@ export function buildView(s: DeskState): DeskView {
     roster, rosterCount: visible.length + " / " + onFloor.length + " AGENTS",
     chat, fills, logs, approvals, nAppr, tabs,
     strip: core
-      ? "CORE FLOOR · stub agents (not AI) · paper fills · P&L still simulated · not advice"
+      ? "CORE FLOOR · stub agents (not AI) · paper book on real prices · not advice"
       : "SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice",
     centerMeta: (core ? "CORE" : "SIMULATED") + " · " + s.seq.length + " EVENTS",
     navStr: cm(capital + pnl), pnlStr: money(pnl), pnlColor: pnl >= 0 ? UP : DOWN,
