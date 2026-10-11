@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema } from 'shared';
+import { AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from 'shared';
 import { InboundSchema, createEngine, momentumIntent, type FloorSocket } from '../src/engine';
 
 class FakeSocket implements FloorSocket {
@@ -230,7 +230,7 @@ describe('contract with packages/shared', () => {
     engine.pushTick('SOL-USDT', tick(2));
     engine.haltAll();
     engine.resumeAll();
-    const schemas = { lifecycle: AgentLifecycleSchema, intent: AgentIntentSchema, decision: AgentDecisionSchema, pnl: AgentPnlSchema } as const;
+    const schemas = { lifecycle: AgentLifecycleSchema, intent: AgentIntentSchema, decision: AgentDecisionSchema, pnl: AgentPnlSchema, config: AgentConfigMsgSchema } as const;
     expect(ws.sent.length).toBeGreaterThan(30);
     for (const m of ws.sent) {
       const schema = schemas[m.type as keyof typeof schemas];
@@ -351,5 +351,68 @@ describe('operator orders (place_order)', () => {
     ws.emit('message', order({ role: 'Risk Officer' }));
     for (const bad of [{ size: -1 }, { size: 0 }, { symbol: 'DOGE-USDT' }, { side: 'HOLD' }, { size: 'lots' }]) ws.emit('message', order(bad));
     expect(ws.sent).toHaveLength(0);
+  });
+});
+
+describe('configure_agent', () => {
+  const cfg = (over: Record<string, unknown>) => JSON.stringify({ type: 'configure_agent', role: 'Quant / Signals', ...over });
+  const quant = (e: ReturnType<typeof createEngine>) => e.agents.find((a) => a.config.role === 'Quant / Signals')!;
+
+  it('sends every seat its settings on connect, matching the shared schema', () => {
+    const engine = createEngine();
+    const ws = new FakeSocket();
+    engine.addClient(ws);
+    expect(ws.of('config')).toHaveLength(engine.agents.length);
+    for (const m of ws.of('config')) expect(() => AgentConfigMsgSchema.parse(m)).not.toThrow();
+  });
+  it('changes autonomy, model, temperature and mandate, and tells everyone', () => {
+    const { engine, ws } = setup(0);
+    ws.emit('message', cfg({ autonomy: 'AUTO', model: 'qwen3 (ollama, local)', temperature: 0.7, mandate: 'Be careful.' }));
+    expect(quant(engine).config).toMatchObject({ autonomy: 'AUTO', model: 'qwen3 (ollama, local)', temperature: 0.7, mandate: 'Be careful.' });
+    expect(ws.of('config').at(-1)).toMatchObject({ role: 'Quant / Signals', autonomy: 'AUTO', mandate: 'Be careful.' });
+  });
+  it('a seat switched to AUTO then decides on its own', () => {
+    const { engine, ws } = setup(0);
+    ws.emit('message', cfg({ autonomy: 'AUTO' }));
+    ws.sent.length = 0;
+    engine.pushTick('BTC-USDT', tick(4));
+    expect(ws.of('decision').some((m) => m.agentId === quant(engine).id)).toBe(true);
+  });
+  it('never mutates the shared seed roster', () => {
+    const before = JSON.stringify(defaultAgents);
+    const { ws } = setup(0);
+    ws.emit('message', cfg({ autonomy: 'AUTO', mandate: 'changed' }));
+    expect(JSON.stringify(defaultAgents)).toBe(before);
+  });
+  it('pauses one seat without touching the others, and resumes it', () => {
+    const { engine, ws } = setup(0);
+    ws.emit('message', cfg({ paused: true }));
+    expect(quant(engine).state).toBe('paused');
+    expect(engine.agents.filter((a) => a.state === 'paused')).toHaveLength(1);
+    ws.sent.length = 0;
+    engine.pushTick('BTC-USDT', tick(4));
+    expect(ws.of('intent').some((m) => m.agentId === quant(engine).id)).toBe(false);
+    ws.emit('message', cfg({ paused: false }));
+    expect(quant(engine).state).toBe('running');
+  });
+  it('HALT ALL beats a single-seat resume, and RESUME ALL does not undo a seat you paused', () => {
+    const { engine, ws } = setup(0);
+    engine.haltAll();
+    ws.emit('message', cfg({ paused: false }));
+    expect(quant(engine).state).toBe('halted');
+    ws.emit('message', cfg({ paused: true }));
+    engine.resumeAll();
+    expect(quant(engine).state).toBe('paused');
+    expect(engine.agents.filter((a) => a.state === 'running')).toHaveLength(engine.agents.length - 1);
+  });
+  it('ignores unknown seats and invalid values, and cannot change risk limits', () => {
+    const { engine, ws } = setup(0);
+    const limits = JSON.stringify(quant(engine).config.riskLimits);
+    ws.emit('message', cfg({ role: 'Janitor', autonomy: 'AUTO' }));
+    for (const bad of [{ autonomy: 'YOLO' }, { temperature: 9 }, { model: '' }, { mandate: 'x'.repeat(2001) }, { paused: 'yes' }]) ws.emit('message', cfg(bad));
+    ws.emit('message', cfg({ riskLimits: { maxClip: 1e9 }, maxClip: 1e9 }));
+    expect(JSON.stringify(quant(engine).config.riskLimits)).toBe(limits);
+    expect(quant(engine).config.autonomy).toBe('SUGGEST');
+    expect(ws.of('config')).toHaveLength(1); // only the last (valid, harmless) message echoed
   });
 });

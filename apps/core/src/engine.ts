@@ -43,6 +43,16 @@ export const InboundSchema = z.discriminatedUnion('type', [
     side: z.enum(['BUY', 'SELL']),
     size: z.number().positive().finite(),
   }),
+  /** Change a seat's settings. Risk limits are deliberately not editable over the wire. */
+  z.object({
+    type: z.literal('configure_agent'),
+    role: z.string().min(1).max(64),
+    autonomy: z.enum(['SUGGEST', 'APPROVE', 'AUTO']).optional(),
+    paused: z.boolean().optional(),
+    model: z.string().min(1).max(64).optional(),
+    temperature: z.number().min(0).max(2).optional(),
+    mandate: z.string().max(2000).optional(),
+  }),
   z.object({ type: z.literal('halt_all') }),
   z.object({ type: z.literal('resume_all') }),
 ]);
@@ -74,7 +84,7 @@ export function createEngine(opts: EngineOptions = {}) {
 
   const agents: FloorAgent[] = defaultAgents.map((config, i) => ({
     id: `TKT-${String(i + 1).padStart(3, '0')}`,
-    config,
+    config: structuredClone(config), // seats are edited at runtime: never mutate the shared seed
     state: 'running',
     dailyPnL: 0,
     book: newBook(),
@@ -97,6 +107,37 @@ export function createEngine(opts: EngineOptions = {}) {
     for (const c of clients) {
       if (c.ws.readyState === WS_OPEN && wants(c, msg)) c.ws.send(payload);
     }
+  };
+
+  let floorHalted = false;
+  /** Seats an operator paused one by one. Kept apart from HALT ALL so resuming the floor doesn't undo them. */
+  const pausedSeats = new Set<string>();
+  const stateOf = (a: FloorAgent): AgentState => (floorHalted ? 'halted' : pausedSeats.has(a.id) ? 'paused' : 'running');
+  const norm = (r: string) => r.toUpperCase().replace(/\s+/g, ' ').trim(); // the Desk shows roles in capitals
+  const configMsg = (a: FloorAgent): FloorMsg => ({
+    type: 'config', agentId: a.id, role: a.config.role, name: a.config.name, model: a.config.model, temperature: a.config.temperature,
+    autonomy: a.config.autonomy, mandate: a.config.mandate, paused: pausedSeats.has(a.id), riskLimits: { ...a.config.riskLimits }, ts: now(),
+  });
+
+  type Configure = { autonomy?: AgentConfig['autonomy']; paused?: boolean; model?: string; temperature?: number; mandate?: string };
+  const configure = (role: string, patch: Configure): void => {
+    const a = agents.find((x) => norm(x.config.role) === norm(role));
+    if (!a) return;
+    if (patch.autonomy !== undefined) a.config.autonomy = patch.autonomy;
+    if (patch.model !== undefined) a.config.model = patch.model;
+    if (patch.temperature !== undefined) a.config.temperature = patch.temperature;
+    if (patch.mandate !== undefined) a.config.mandate = patch.mandate;
+    if (patch.paused !== undefined) {
+      if (patch.paused) pausedSeats.add(a.id);
+      else pausedSeats.delete(a.id);
+      // A halted floor stays halted: one seat can't be resumed past HALT ALL, it just won't be paused afterwards.
+      const next = stateOf(a);
+      if (a.state !== next) {
+        a.state = next;
+        broadcast(lifecycle(a));
+      }
+    }
+    broadcast(configMsg(a));
   };
 
   const lifecycle = (a: FloorAgent): FloorMsg => ({
@@ -138,7 +179,6 @@ export function createEngine(opts: EngineOptions = {}) {
 
   /** Human-approved order. Rejected (never clamped) if it breaks a limit, so the operator sees exactly what happened. */
   const placeOrder = (role: string, symbol: string, side: 'BUY' | 'SELL', size: number): void => {
-    const norm = (r: string) => r.toUpperCase().replace(/\s+/g, ' ').trim(); // the Desk shows roles in capitals
     const agent = agents.find((a) => norm(a.config.role) === norm(role) && a.config.trades);
     if (!agent) return;
     const price = lastPx.get(symbol);
@@ -163,8 +203,9 @@ export function createEngine(opts: EngineOptions = {}) {
   const hasBook = (a: FloorAgent) => a.book.positions.size > 0 || a.book.realized !== 0;
 
   const setAll = (state: 'running' | 'halted'): number => {
+    floorHalted = state === 'halted';
     for (const a of agents) {
-      a.state = state;
+      a.state = stateOf(a);
       broadcast(lifecycle(a));
     }
     broadcast(floorLifecycle(state));
@@ -225,6 +266,7 @@ export function createEngine(opts: EngineOptions = {}) {
       const client: Client = { ws, subscriptions: new Set() };
       clients.add(client);
       for (const a of agents) ws.send(JSON.stringify(lifecycle(a)));
+      for (const a of agents) ws.send(JSON.stringify(configMsg(a)));
       for (const a of agents) if (hasBook(a)) ws.send(JSON.stringify(pnlMsg(a)));
       log.info(`floor client connected (${clients.size})`);
 
@@ -245,6 +287,9 @@ export function createEngine(opts: EngineOptions = {}) {
         if (msg.type === 'subscribe') {
           if (msg.subscribe) client.subscriptions.add(msg.agentId);
           else client.subscriptions.delete(msg.agentId);
+        } else if (msg.type === 'configure_agent') {
+          const { type: _t, role, ...patch } = msg;
+          configure(role, patch);
         } else if (msg.type === 'place_order') {
           placeOrder(msg.role, msg.symbol, msg.side, msg.size);
         } else if (msg.type === 'halt_all') {

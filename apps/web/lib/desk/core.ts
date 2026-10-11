@@ -1,6 +1,6 @@
 import { CORE_URL } from "./secrets";
-import { LBL, PERP, type Side } from "./data";
-import { fmt, fmtQty } from "./format";
+import { LBL, PERP, type Autonomy, type Side } from "./data";
+import { cm, fmt, fmtQty } from "./format";
 import type { Approval, DeskState, Fill, SeqEvent } from "./state";
 import { walk } from "./format";
 
@@ -14,6 +14,7 @@ export type CoreStatus = "connecting" | "live" | "offline";
 export type CoreMsg =
   | { type: "lifecycle"; agentId: string; role: string; status: "initialized" | "running" | "paused" | "halted"; ts: number }
   | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number }
+  | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number };
 
@@ -31,6 +32,17 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
   if (raw.type === "lifecycle") {
     const st = raw.status;
     return st === "initialized" || st === "running" || st === "paused" || st === "halted" ? { type: "lifecycle", agentId, role, status: st, ts } : null;
+  }
+  if (raw.type === "config") {
+    const rl = raw.riskLimits;
+    const a = raw.autonomy;
+    if (!str(raw.name, 64) || !str(raw.model, 64) || !num(raw.temperature) || !str(raw.mandate, 2000) || typeof raw.paused !== "boolean") return null;
+    if (a !== "SUGGEST" && a !== "APPROVE" && a !== "AUTO") return null;
+    if (!isObj(rl) || !num(rl.maxClip) || !num(rl.maxLeverage) || !num(rl.dailyLossStop)) return null;
+    return {
+      type: "config", agentId, role, name: raw.name, model: raw.model, temperature: raw.temperature, autonomy: a, mandate: raw.mandate,
+      paused: raw.paused, riskLimits: { maxClip: rl.maxClip, maxLeverage: rl.maxLeverage, dailyLossStop: rl.dailyLossStop }, ts,
+    };
   }
   if (raw.type === "pnl") {
     if (!num(raw.pnl) || !num(raw.exposure) || raw.exposure < 0 || !Array.isArray(raw.positions) || raw.positions.length > 16) return null;
@@ -83,11 +95,25 @@ export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<
 
 export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | null {
   if (m.type === "lifecycle") {
-    if (m.agentId === "*") return { halted: m.status === "halted" };
+    // Per-seat pause arrives in `config`; lifecycle only tells us about the floor as a whole.
+    return m.agentId === "*" ? { halted: m.status === "halted" } : null;
+  }
+
+  if (m.type === "config") {
     const i = seatOf(s, m.role);
     if (i < 0) return null;
-    const paused = m.status === "halted" || m.status === "paused";
-    return s.agents[i]!.paused === paused ? null : { agents: s.agents.map((a, j) => (j === i ? { ...a, paused } : a)) };
+    const { maxClip, maxLeverage, dailyLossStop } = m.riskLimits;
+    return {
+      agents: s.agents.map((a, j) =>
+        j === i
+          ? {
+              ...a, model: m.model, temp: m.temperature, autonomy: m.autonomy, mandate: m.mandate, paused: m.paused,
+              maxClip: cm(maxClip), leverage: maxLeverage.toFixed(1) + "x", lossStop: "-" + cm(dailyLossStop),
+              tokens: "0", spend: "$0.00", latency: "—", // the stub agents never call a model
+            }
+          : a,
+      ),
+    };
   }
 
   if (m.type === "pnl") {

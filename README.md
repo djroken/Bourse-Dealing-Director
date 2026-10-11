@@ -29,7 +29,7 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Floor chat, fills, approvals | **Core's stub agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule (not AI models); AUTO seats fill on the paper venue, SUGGEST/APPROVE seats send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
-| Hermes Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, a stub agent engine with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Editing a seat in the agent drawer is still local only; core runs the seeded autonomy and limits. See [docs/core-api.md](docs/core-api.md) |
+| Hermes Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, a stub agent engine with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
 | Real model calls, MCP server, runtime adapters | Planned | |
 | Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
 
@@ -103,7 +103,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Connect the desk to Core's WebSocket (chat, fills, approvals, HALT ALL)
 - [x] One agent roster shared by desk and core
 - [x] Roster P&L and positions from core's paper book; approvals executed by core
-- [ ] Push agent-drawer edits (autonomy, limits, pause) to core
+- [x] Push agent-drawer edits (autonomy, pause, model, temperature, mandate) to core; limits stay read-only on purpose
 - [ ] Real model calls per agent (provider adapters) behind the same risk gate
 - [x] Server-side encrypted key storage (nothing consumes it yet)
 - [ ] MCP server so external agents can drive the desk

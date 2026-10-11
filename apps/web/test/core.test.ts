@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from "../../../packages/shared/src";
+import { AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from "../../../packages/shared/src";
 import { SEED_AGENTS } from "../lib/desk/data";
 import { applyCoreMsg, coreFloorUrl, deskSym, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "../lib/desk/core";
 import { createInitialState, tickState, type DeskState } from "../lib/desk/state";
@@ -90,12 +90,35 @@ describe("applyCoreMsg", () => {
     expect(p.fills).toBeUndefined();
     expect(p.seq!.at(-1)!.sysText).toMatch(/vetoed by the risk gate/);
   });
-  it("floor lifecycle drives HALT, seat lifecycle drives pause", () => {
+  it("floor lifecycle drives HALT; per-seat lifecycle is ignored (pause arrives in config)", () => {
     const s = base();
     expect(applyCoreMsg(s, parseCoreMsg({ type: "lifecycle", agentId: "*", role: "floor", status: "halted", ts: 1 })!)).toEqual({ halted: true });
-    const p = applyCoreMsg(s, parseCoreMsg({ type: "lifecycle", agentId: "TKT-002", role: "Execution Trader", status: "halted", ts: 1 })!)!;
-    expect(p.agents![seat("Atlas")]!.paused).toBe(true);
-    expect(applyCoreMsg(s, parseCoreMsg({ type: "lifecycle", agentId: "TKT-002", role: "Execution Trader", status: "running", ts: 1 })!)).toBeNull();
+    expect(applyCoreMsg(s, parseCoreMsg({ type: "lifecycle", agentId: "TKT-002", role: "Execution Trader", status: "halted", ts: 1 })!)).toBeNull();
+  });
+});
+
+const config = (name: string, over: Record<string, unknown> = {}) => ({
+  type: "config", agentId: "TKT-004", role: roleOf(name), name: "Pico Nandra", model: "o4-mini", temperature: 0.2, autonomy: "AUTO",
+  mandate: "Be careful.", paused: true, riskLimits: { maxClip: 4000, maxLeverage: 5, dailyLossStop: 300 }, ts: 9, ...over,
+});
+
+describe("core config", () => {
+  it("matches the shared schema and rejects malformed config", () => {
+    expect(parseCoreMsg(AgentConfigMsgSchema.parse(config("Pico")))).toMatchObject({ type: "config" });
+    for (const bad of [config("Pico", { autonomy: "YOLO" }), config("Pico", { paused: "no" }), config("Pico", { riskLimits: { maxClip: "x" } }), config("Pico", { mandate: "x".repeat(2001) }), config("Pico", { riskLimits: null })])
+      expect(parseCoreMsg(bad)).toBeNull();
+  });
+  it("overlays core's settings and limits onto the seat, and says the stub agents use no tokens", () => {
+    const s = { ...base(), core: "live" as const };
+    const p = applyCoreMsg(s, parseCoreMsg(config("Pico"))!)!;
+    expect(p.agents![seat("Pico")]).toMatchObject({
+      autonomy: "AUTO", temp: 0.2, mandate: "Be careful.", paused: true,
+      maxClip: "$4.0k", leverage: "5.0x", lossStop: "-$300", tokens: "0", spend: "$0.00",
+    });
+    expect(p.agents![seat("Atlas")]).toEqual(s.agents[seat("Atlas")]); // other seats untouched
+  });
+  it("ignores a config for a seat the desk doesn't have", () => {
+    expect(applyCoreMsg(base(), parseCoreMsg(config("Pico", { role: "Janitor" }))!)).toBeNull();
   });
 });
 

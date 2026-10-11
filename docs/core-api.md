@@ -68,6 +68,12 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 
 `pnl` is a seat's paper book marked to the latest price: realised plus unrealised since core started, in USD (average-cost accounting; negative `qty` is short). It is sent after every tick for seats that have traded, and to a new client on connect. It is also what each seat's daily loss stop reads. Halted seats keep marking.
 
+```jsonc
+{ "type": "config", "agentId": "…", "role": "…", "name": "…", "model": "…", "temperature": 0.3, "autonomy": "SUGGEST|APPROVE|AUTO", "mandate": "…", "paused": false, "riskLimits": { "maxClip": 4000, "maxLeverage": 3, "dailyLossStop": 500 }, "ts": 0 }
+```
+
+`config` is a seat's current settings. A new client receives one per seat on connect (after `lifecycle`, before `pnl`), and one is broadcast to everyone after each `configure_agent`. Core is authoritative: the Desk adopts it on connect and reconnect. `riskLimits` are read-only over the wire.
+
 A `decision` with `riskChecked: false` and `size: 0` is a trade the risk gate vetoed. Schemas live in [`packages/shared`](../packages/shared/src/floor.schema.ts).
 
 The roster is `defaultAgents` in [`packages/shared`](../packages/shared/src/agentSeed.ts), the same eight seats the desk shows (a web test keeps their names, roles, models, temperature, autonomy and mandates identical). Only seats with `trades: true` (Execution Trader, Market Maker, Quant / Signals, Sentiment Desk) emit intents; the others coordinate, research or police risk. The desk matches seats by `role`.
@@ -77,6 +83,7 @@ Messages you may send (anything else is ignored; frames over 16 KiB close the co
 ```jsonc
 { "type": "subscribe", "agentId": "…", "subscribe": true }   // only receive this agent's events (subscribe:false to undo)
 { "type": "place_order", "role": "Quant / Signals", "symbol": "ETH-USDT", "side": "BUY", "size": 0.5 }   // an operator-approved order for a trading seat
+{ "type": "configure_agent", "role": "Quant / Signals", "autonomy": "APPROVE", "paused": false, "model": "…", "temperature": 0.3, "mandate": "…" }   // every field except role is optional
 { "type": "halt_all" }
 { "type": "resume_all" }
 ```
@@ -94,6 +101,8 @@ Core is meant to be driven by the local web app only.
 If you change `CORE_HOST` to a non-loopback address, put authentication and TLS in front first.
 
 `place_order` fills at core's last price (so you may see a different price from the one on your screen) and goes through the same checks as an agent's own decision. Unlike an agent's order it is **rejected, never clamped**, if it is over the seat's clip, if the floor is halted, if core has no price for the symbol yet, or if the seat is past its loss stop. The result comes back as an ordinary `decision` (`riskChecked: false`, `action: "HOLD"` and the reason in `rationale` when rejected). `role` matches case-insensitively and only trading seats accept orders.
+
+`configure_agent` changes a seat's autonomy, model, temperature, mandate and/or `paused` (model 1-64 chars, temperature 0-2, mandate up to 2000 chars). A paused seat stops deciding and reports `paused`; HALT ALL takes precedence (`halted` > `paused` > `running`), and RESUME ALL restores paused seats to `paused`. **Risk limits (clip, leverage, loss stop) cannot be edited over the socket**, so a compromised page cannot raise them. Settings live in memory and reset when core restarts.
 
 ## Risk gate
 
