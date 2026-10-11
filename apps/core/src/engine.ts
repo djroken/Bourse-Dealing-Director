@@ -93,7 +93,7 @@ export function createEngine(opts: EngineOptions = {}) {
   });
 
   const evaluate = (agent: FloorAgent, symbol: string, tick: Tick): void => {
-    if (agent.state !== 'running') return;
+    if (agent.state !== 'running' || !agent.config.trades) return;
     const key = `${agent.id}:${symbol}`;
     const last = lastEval.get(key);
     if (last !== undefined && now() - last < cooldownMs) return;

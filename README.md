@@ -26,9 +26,10 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets stay in memory unless you save them to core's encrypted store |
 | Encrypted key store (core) | **Working, nothing consumes it yet** | AES-256-GCM at rest, write-only over HTTP. Needs `HERMES_MASTER_KEY` |
 | Market prices and candles | **Real** | Fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed |
-| Agents, floor chat, fills, P&L | **Simulated** | A scripted conversation over seeded positions. The desk says so on screen |
+| Floor chat, fills, approvals | **Core's stub agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule (not AI models); AUTO seats fill on the paper venue, SUGGEST/APPROVE seats send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
+| Roster P&L, positions, sparklines | **Simulated** | Seeded numbers marked to live prices. Not yet fed by core's fills |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
-| Hermes Core (`apps/core`) | **Working, not connected to the desk** | Market-data feed, a stub agent engine with a hard risk gate, HTTP and WebSocket API. Tested, but the desk doesn't use it yet. See [docs/core-api.md](docs/core-api.md) |
+| Hermes Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, a stub agent engine with a hard risk gate, HTTP and WebSocket API. The desk's HALT ALL is sent to core. Editing a seat in the agent drawer is local only; core runs the seeded autonomy. See [docs/core-api.md](docs/core-api.md) |
 | Real model calls, MCP server, runtime adapters | Planned | |
 | Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
 
@@ -99,8 +100,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 
 - [x] Desk UI, themes, approvals queue, setup flow
 - [x] Core: market-data feed, stub agent engine, risk gate, tests
-- [ ] Connect the desk to Core's WebSocket, so the roster, chat and fills come from the engine
-- [ ] Reconcile the desk's agent roster with `packages/shared`
+- [x] Connect the desk to Core's WebSocket (chat, fills, approvals, HALT ALL)
+- [x] One agent roster shared by desk and core
+- [ ] Feed roster P&L and positions from core's fills; push agent-drawer edits to core
 - [ ] Real model calls per agent (provider adapters) behind the same risk gate
 - [x] Server-side encrypted key storage (nothing consumes it yet)
 - [ ] MCP server so external agents can drive the desk

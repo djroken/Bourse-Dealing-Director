@@ -63,11 +63,15 @@ describe('connect', () => {
 });
 
 describe('evaluation', () => {
-  it('emits an intent per agent for the ticked symbol only', () => {
+  it('emits an intent per trading seat for the ticked symbol only, and none for seats that never trade', () => {
     const { engine, ws } = setup();
     engine.pushTick('BTC-USDT', tick());
     const intents = ws.of('intent');
-    expect(intents).toHaveLength(engine.agents.length);
+    expect(intents).toHaveLength(engine.agents.filter((a) => a.config.trades).length);
+    expect(intents.length).toBeGreaterThan(0);
+    expect(intents.length).toBeLessThan(engine.agents.length);
+    const nonTraders = new Set(engine.agents.filter((a) => !a.config.trades).map((a) => a.id));
+    expect(intents.some((m) => nonTraders.has(String(m.agentId)))).toBe(false);
     expect(new Set(intents.map((m) => m.symbol))).toEqual(new Set(['BTC-USDT']));
   });
 
@@ -172,7 +176,7 @@ describe('client protocol', () => {
     ws.emit('message', JSON.stringify({ type: 'subscribe', agentId: 'TKT-002' }));
     ws.emit('message', JSON.stringify({ type: 'subscribe', agentId: 'TKT-002', subscribe: false }));
     engine.pushTick('BTC-USDT', tick());
-    expect(ws.of('intent')).toHaveLength(engine.agents.length);
+    expect(ws.of('intent')).toHaveLength(engine.agents.filter((a) => a.config.trades).length);
   });
 
   it('halt_all and resume_all work over the socket', () => {
