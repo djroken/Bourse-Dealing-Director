@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
+import type { Advisor } from './models';
 import { clampClip, withinLossStop } from './risk';
 
 /** The slice of a WebSocket the engine needs, so tests can use a plain fake. */
@@ -49,7 +50,7 @@ export const InboundSchema = z.discriminatedUnion('type', [
     role: z.string().min(1).max(64),
     autonomy: z.enum(['SUGGEST', 'APPROVE', 'AUTO']).optional(),
     paused: z.boolean().optional(),
-    model: z.string().min(1).max(64).optional(),
+    model: z.string().min(1).max(96).optional(),
     temperature: z.number().min(0).max(2).optional(),
     mandate: z.string().max(2000).optional(),
   }),
@@ -63,10 +64,23 @@ export interface EngineOptions {
   now?: () => number;
   /** Minimum gap between evaluations of the same agent on the same symbol. */
   cooldownMs?: number;
+  /** Gap between model calls for the same seat and symbol. Longer than cooldownMs because models cost time (and maybe money). */
+  modelCooldownMs?: number;
+  /** Asks real models for a view. Without one, every seat runs the stub rule. */
+  advisor?: Advisor;
   log?: Logger;
 }
 
 /** Stub strategy: 24h momentum. Stands in for a model call; it is not trading advice and is not meant to make money. */
+/** Core, not the model, decides the size: a fraction of the clip scaled by confidence, in asset units rounded down. */
+export function sizeIntent(side: 'BUY' | 'SELL' | 'HOLD', confidence: number, maxClipUsd: number, price: number): { side: 'BUY' | 'SELL' | 'HOLD'; size: number; confidence: number } {
+  const c = Number.isFinite(confidence) ? Math.min(Math.max(confidence, 0), 0.95) : 0;
+  const notional = clampClip((maxClipUsd * c) / 2, maxClipUsd);
+  const size = Number.isFinite(price) && price > 0 ? Math.floor((notional / price) * 1e4) / 1e4 : 0;
+  const conf = Number(c.toFixed(2));
+  return size === 0 || side === 'HOLD' ? { side: 'HOLD', size: 0, confidence: conf } : { side, size, confidence: conf };
+}
+
 export function momentumIntent(change24h: number | null, maxClipUsd: number, price: number): { side: 'BUY' | 'SELL' | 'HOLD'; size: number; confidence: number } {
   const change = change24h ?? 0;
   const confidence = Math.min(Math.abs(change) / 5, 0.95);
@@ -80,6 +94,9 @@ export function momentumIntent(change24h: number | null, maxClipUsd: number, pri
 export function createEngine(opts: EngineOptions = {}) {
   const now = opts.now ?? Date.now;
   const cooldownMs = opts.cooldownMs ?? 15_000;
+  const modelCooldownMs = opts.modelCooldownMs ?? 300_000;
+  const advisor = opts.advisor;
+  const inFlight = new Set<string>();
   const log: Logger = opts.log ?? { info: () => {}, warn: () => {} };
 
   const agents: FloorAgent[] = defaultAgents.map((config, i) => ({
@@ -151,8 +168,33 @@ export function createEngine(opts: EngineOptions = {}) {
     if (agent.state !== 'running' || !agent.config.trades) return;
     const key = `${agent.id}:${symbol}`;
     const last = lastEval.get(key);
-    if (last !== undefined && now() - last < cooldownMs) return;
+    const isModelSeat = !!advisor?.handles(agent.config.model);
+    if (last !== undefined && now() - last < (isModelSeat ? modelCooldownMs : cooldownMs)) return;
+    if (isModelSeat && inFlight.has(key)) return;
     lastEval.set(key, now());
+
+    if (isModelSeat) {
+      // Model seats are suggest-only: whatever the model says, it ends at an intent a human can act on.
+      inFlight.add(key);
+      const modelId = agent.config.model;
+      void advisor!
+        .advise(modelId, { role: agent.config.role, mandate: agent.config.mandate, symbol, price: tick.price, change24h: tick.change24h }, agent.config.temperature)
+        .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed' }))
+        .then((res) => {
+          inFlight.delete(key);
+          if (agent.state !== 'running' || agent.config.model !== modelId) return; // halted, paused or re-pointed while waiting
+          const clip = agent.config.riskLimits.maxClip;
+          if (res.ok) {
+            const it = sizeIntent(res.view.side, res.view.confidence, clip, tick.price);
+            broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side: it.side, size: it.size, confidence: it.confidence, rationale: `${modelId}: ${res.view.rationale}`, ts: now() });
+          } else {
+            log.warn(`model ${modelId} unavailable for ${agent.config.role}: ${res.reason}`);
+            const m = momentumIntent(tick.change24h, clip, tick.price);
+            broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side: m.side, size: m.size, confidence: m.confidence, rationale: `${modelId} unavailable (${res.reason}); stub momentum rule instead`, ts: now() });
+          }
+        });
+      return;
+    }
 
     const { side, size, confidence } = momentumIntent(tick.change24h, agent.config.riskLimits.maxClip, tick.price);
     const change = tick.change24h ?? 0;

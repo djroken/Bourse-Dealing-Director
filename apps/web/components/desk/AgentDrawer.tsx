@@ -40,6 +40,15 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
           <select className="hz-select" value={sel.model} aria-label="Model" onChange={(e) => a.patchSel({ model: e.target.value })}>
             {models.map((mo) => <option key={mo} value={mo}>{mo}</option>)}
           </select>
+          <input
+            key={sel.model} className="hz-select" aria-label="Custom model id" spellCheck={false} autoComplete="off"
+            placeholder="Custom id: ollama:qwen3 · openrouter:vendor/model"
+            onKeyDown={(e) => { if (e.key === "Enter") { const t = e.currentTarget.value.trim(); if (t) a.patchSel({ model: t.slice(0, 96) }); } }}
+            onBlur={(e) => { const t = e.currentTarget.value.trim(); if (t) a.patchSel({ model: t.slice(0, 96) }); }}
+          />
+          <div style={m(9.5, undefined, "var(--c6B7681)", { lineHeight: 1.5 })}>
+            ollama: runs locally and is free. openrouter-free: only accepts :free models. openrouter: takes any model and may cost money. Model seats suggest only; they never trade on their own.
+          </div>
           <div style={{ display: "flex", gap: 8 }}>
             {([["TOKENS 24H", sel.tokens], ["SPEND 24H", sel.spend], ["LATENCY", sel.latency]] as const).map(([label, value]) => (
               <div key={label} style={{ flex: 1, border: "1px solid var(--w07)", borderRadius: 3, padding: "8px 10px" }}>

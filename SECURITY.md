@@ -21,4 +21,4 @@ Include what you found, how to reproduce it, and the impact you expect. This is 
 
 - `core` has no authentication; do not expose it to a network.
 - Keys entered in Setup are held in browser memory and never written to `localStorage`. Core can store them encrypted (AES-256-GCM, master key from `HERMES_MASTER_KEY`), but it has no login, so anyone who can reach it on your machine can overwrite or delete stored keys (never read them). The encrypted file protects against someone copying the disk, not against malware running as you.
-- Agents are scripted; there is no model or exchange integration.
+- Agents are stub rules unless you point a seat at a model (`ollama:`, `openrouter:`, `openrouter-free:`). Model seats are suggest-only and core sizes every order, but a model sees the seat's mandate, the symbol and its price; with OpenRouter that goes to a third party. `openrouter:` can cost money (use `openrouter-free:` to refuse paid models). There is no exchange integration.

@@ -416,3 +416,82 @@ describe('configure_agent', () => {
     expect(ws.of('config')).toHaveLength(1); // only the last (valid, harmless) message echoed
   });
 });
+
+describe('model seats', () => {
+  const view = (side: 'BUY' | 'SELL' | 'HOLD', confidence = 0.8) => ({ ok: true as const, view: { side, confidence, rationale: 'because' } });
+  function modelSetup(advise: (id: string) => Promise<any>) {
+    const calls: string[] = [];
+    const advisor = {
+      handles: (id: string) => id.startsWith('ollama:'),
+      advise: async (id: string) => { calls.push(id); return advise(id); },
+      status: () => ({}) as any,
+    };
+    const c = clock();
+    const engine = createEngine({ now: c.now, cooldownMs: 0, modelCooldownMs: 1000, advisor });
+    const ws = new FakeSocket();
+    engine.addClient(ws);
+    ws.sent.length = 0;
+    engine.agents[3]!.config.model = 'ollama:llama3.2'; // Pico, a trading seat
+    return { c, engine, ws, calls };
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('uses the model view, sized by core, and never auto-fills even on AUTO', async () => {
+    const { engine, ws } = modelSetup(async () => view('BUY', 0.8));
+    engine.agents[3]!.config.autonomy = 'AUTO';
+    engine.pushTick('BTC-USDT', tick());
+    await flush();
+    const pico = ws.of('intent').filter((m) => m.agentId === 'TKT-004');
+    expect(pico).toHaveLength(1);
+    expect(pico[0]).toMatchObject({ side: 'BUY', confidence: 0.8 });
+    expect(String(pico[0]!.rationale)).toContain('ollama:llama3.2: because');
+    expect((pico[0]!.size as number) * 100).toBeLessThanOrEqual(engine.agents[3]!.config.riskLimits.maxClip);
+    expect(ws.of('decision').filter((m) => m.agentId === 'TKT-004')).toHaveLength(0);
+    expect(AgentIntentSchema.safeParse(pico[0]).success).toBe(true);
+  });
+
+  it('falls back to the stub rule, labelled, when the model fails; still never fills', async () => {
+    const { engine, ws } = modelSetup(async () => ({ ok: false, reason: 'ECONNREFUSED' }));
+    engine.agents[3]!.config.autonomy = 'AUTO';
+    engine.pushTick('BTC-USDT', tick());
+    await flush();
+    const pico = ws.of('intent').filter((m) => m.agentId === 'TKT-004');
+    expect(String(pico[0]!.rationale)).toContain('unavailable (ECONNREFUSED)');
+    expect(ws.of('decision').filter((m) => m.agentId === 'TKT-004')).toHaveLength(0);
+  });
+
+  it('rate-limits model calls per seat and symbol, and never overlaps them', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { c, engine, calls } = modelSetup(async () => { await gate; return view('HOLD'); });
+    engine.pushTick('BTC-USDT', tick());
+    engine.pushTick('BTC-USDT', tick()); // in flight and inside the cooldown
+    expect(calls).toHaveLength(1);
+    release();
+    await flush();
+    engine.pushTick('BTC-USDT', tick());
+    expect(calls).toHaveLength(1); // still inside modelCooldownMs
+    c.advance(1500);
+    engine.pushTick('BTC-USDT', tick());
+    expect(calls).toHaveLength(2);
+  });
+
+  it('drops a reply that arrives after the floor was halted', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const { engine, ws } = modelSetup(async () => { await gate; return view('BUY'); });
+    engine.pushTick('BTC-USDT', tick());
+    engine.haltAll();
+    release();
+    await flush();
+    expect(ws.of('intent').filter((m) => m.agentId === 'TKT-004')).toHaveLength(0);
+  });
+
+  it('seats with a plain model id keep using the stub rule', async () => {
+    const { engine, ws, calls } = modelSetup(async () => view('BUY'));
+    engine.pushTick('BTC-USDT', tick());
+    await flush();
+    expect(calls).toEqual(['ollama:llama3.2']); // only Pico
+    expect(ws.of('intent').filter((m) => m.agentId === 'TKT-002')).toHaveLength(1);
+  });
+});

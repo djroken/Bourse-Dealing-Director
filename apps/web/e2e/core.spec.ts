@@ -152,3 +152,16 @@ test("a core config message updates the drawer, and an echo doesn't clobber typi
   await page.waitForTimeout(150);
   await expect(box).toHaveValue("Half-typed edit");
 });
+
+test("a custom model id typed in the drawer is sent to core", async ({ page }) => {
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  await page.locator(".hz-agent", { hasText: "Pico Nandra" }).click();
+  const drawer = page.getByRole("dialog", { name: /Pico Nandra settings/ });
+  await drawer.getByLabel("Custom model id").fill("openrouter:anthropic/claude-sonnet-4.5");
+  await drawer.getByLabel("Custom model id").press("Enter");
+  await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter:anthropic/claude-sonnet-4.5")).toBe(true);
+  await drawer.getByLabel("Model", { exact: true }).selectOption("openrouter-free:meta-llama/llama-3.3-70b-instruct:free");
+  await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:meta-llama/llama-3.3-70b-instruct:free")).toBe(true);
+});

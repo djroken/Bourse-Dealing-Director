@@ -18,6 +18,8 @@ export const TINTS: Record<Grp, string> = {
 export const MODELS = [
   "claude-opus-4.5", "claude-sonnet-4.5", "claude-haiku-4.5", "gpt-5.1", "o4-mini",
   "gemini-2.5-pro", "llama-4-405b", "mistral-large-2", "deepseek-v3", "qwen3 (ollama, local)",
+  // Real model calls via Hermes Core. These only ever suggest; they never place an order on their own.
+  "ollama:llama3.2", "openrouter-free:meta-llama/llama-3.3-70b-instruct:free",
 ];
 export const AUTONOMY: Autonomy[] = ["SUGGEST", "APPROVE", "AUTO"];
 export const ALL_TOOLS = ["orderbook", "perp-venues", "dex-router", "news-wire", "on-chain", "backtest", "twitter", "options-surface"];
