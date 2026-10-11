@@ -1401,3 +1401,34 @@ a:hover {
     gap: 4px;
   }
 }
+
+/* ---- Honesty labels --------------------------------------------------------- */
+.hz-sim {
+  flex: none;
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--w06);
+  background: rgba(255, 158, 44, 0.05);
+  color: var(--cFFC078);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  line-height: 1.5;
+}
+.hz-seg--mode button[data-soon="true"]:not([data-on="true"]) {
+  opacity: 0.55;
+}
+.hz-onb-note {
+  margin: 0 0 8px;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 158, 44, 0.3);
+  border-radius: 4px;
+  background: rgba(255, 158, 44, 0.06);
+  color: var(--cFFC078);
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.hz-onb-card[data-soon="true"] {
+  opacity: 0.55;
+  cursor: default;
+}

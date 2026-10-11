@@ -42,7 +42,7 @@ export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: D
       <div className="hz-panel hz-glass" style={{ flex: 1 }}>
         <div className="hz-panel-head" style={{ height: 34, padding: "0 12px" }}>
           <span style={m(10, "0.18em", "var(--c98A3AD)")}>NEWS FEED</span>
-          <span style={m(9, "0.12em", "var(--cFF9E2C)")}>LIVE</span>
+          <span style={m(9, "0.12em", "var(--c7C8894)")}>SAMPLE HEADLINES</span>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
           {NEWS.map((n, i) => {

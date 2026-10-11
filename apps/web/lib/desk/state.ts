@@ -1,5 +1,5 @@
 import {
-  type Agent, type Autonomy, type Mode, type Setup, type Side,
+  LIVE_AVAILABLE, type Agent, type Autonomy, type Mode, type Setup, type Side,
   DEFAULT_SETUP, FILL_TPL, POS, SCRIPT, SEED_AGENTS, TAPE, VENUES,
 } from "./data";
 import { walk } from "./format";
@@ -54,6 +54,8 @@ export interface DeskState {
   setup: Setup;
   mode: Mode;
   confirmLive: boolean;
+  /** Shows the "Live trading is not available yet" notice. */
+  liveNotice: boolean;
   setupNotice: boolean;
   /** Current onboarding step (0-5) while the setup overlay is open. */
   onbStep: number;
@@ -107,7 +109,7 @@ export function createInitialState(now: number): DeskState {
     ),
     centerOpen: true, tab: "chat", mTab: "floor", sel: null, filter: "ALL", draft: "", halted: false,
     setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
-    mode: "demo", confirmLive: false, setupNotice: false, onbStep: 0,
+    mode: "demo", confirmLive: false, liveNotice: false, setupNotice: false, onbStep: 0,
     chartSrc: "tv", chartSym: "BTCUSDT",
     live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false,
     seq, fills: makeFills(live, now),
@@ -126,6 +128,7 @@ export function capitalOf(setup: Setup): number {
 export const bookScale = (setup: Setup): number => capitalOf(setup) / 12.5e6;
 
 export function venuesReady(setup: Setup): Array<{ id: string; name: string }> {
+  if (!LIVE_AVAILABLE) return []; // no venue can be live while live trading does not exist
   return VENUES.filter((v) => {
     if (!setup.on["venue." + v.id]) return false;
     return String(setup.vals["venue." + v.id + "." + v.field] || "").trim().length > 0;

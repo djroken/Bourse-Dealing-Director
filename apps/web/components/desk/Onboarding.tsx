@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AUTONOMY, AUTO_DESC, RUNTIME_NAMES } from "@/lib/desk/data";
+import { AUTONOMY, AUTO_DESC, LIVE_AVAILABLE, RUNTIME_NAMES } from "@/lib/desk/data";
 import {
   MCP_SNIPPET, MCP_TOOLS, REVIEW_STEP, RISK_STEP, STEPS, STEP_COUNT, STEP_RAIL,
   type OnbItem, type OnbStep, keyOf, valKey,
@@ -30,20 +30,25 @@ function Check({ on, radio }: { on: boolean; radio?: boolean }) {
 }
 
 function ItemCard({ st, it, s, a }: { st: OnbStep; it: OnbItem; s: DeskState; a: DeskActions }) {
-  const on = st.single ? s.setup.runtime === it.id : it.locked || !!s.setup.on[keyOf(st, it)];
-  const toggle = () =>
+  const soon = !!it.soon && !LIVE_AVAILABLE;
+  const on = soon ? false : st.single ? s.setup.runtime === it.id : it.locked || !!s.setup.on[keyOf(st, it)];
+  const toggle = () => {
+    if (soon) return;
     a.updSetup((su) => {
       if (st.single) su.runtime = it.id;
       else if (!it.locked) su.on[keyOf(st, it)] = !su.on[keyOf(st, it)];
     });
-  const kind = tagKind(it.tag);
+  };
+  const tag = soon ? "COMING SOON" : it.tag;
+  const kind = tagKind(tag);
   return (
     <div
       className="hz-onb-card"
       data-on={on}
+      data-soon={soon || undefined}
       role={st.single ? "radio" : "checkbox"}
       aria-checked={on}
-      aria-disabled={it.locked || undefined}
+      aria-disabled={it.locked || soon || undefined}
       tabIndex={0}
       onClick={toggle}
       onKeyDown={(e) => {
@@ -56,10 +61,10 @@ function ItemCard({ st, it, s, a }: { st: OnbStep; it: OnbItem; s: DeskState; a:
       <div className="hz-onb-card-top">
         <Check on={on} radio={st.single} />
         <span className="hz-onb-name">{it.name}</span>
-        <span className="hz-onb-tag" data-kind={kind}>{it.tag}</span>
+        <span className="hz-onb-tag" data-kind={kind}>{tag}</span>
       </div>
       <div className="hz-onb-desc">{it.desc}</div>
-      {on && it.fields.length > 0 && (
+      {on && !soon && it.fields.length > 0 && (
         <div className="hz-onb-fields" onClick={(e) => e.stopPropagation()}>
           {it.fields.map((f) => {
             const k = valKey(st, it, f);
@@ -206,7 +211,7 @@ function ReviewStep({ s, v }: { s: DeskState; v: DeskView }) {
     ["Agent runtime", RUNTIME_NAMES[s.setup.runtime] ?? "Hermes native", true],
     ["Model providers", models.length ? models.join(", ") : "None. Add one to run agents", models.length > 0],
     ["Market data", feeds.length + " feeds · " + feeds.slice(0, 3).join(", ") + (feeds.length > 3 ? " …" : ""), true],
-    ["Live venues", ready.length ? ready.map((r) => r.name).join(", ") : "None yet · Demo only", ready.length > 0],
+    ["Live trading", ready.length ? ready.map((r) => r.name).join(", ") : "Not available yet · paper trading only", true],
     ["Floor", seats + " of " + s.agents.length + " seats · default autonomy " + s.setup.autonomy, seats > 0],
     ["Risk", v.capitalLabel + " paper capital · daily loss stop $" + s.setup.lossStop + " · max " + s.setup.lev + "x", true],
   ];
@@ -242,7 +247,7 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
     ? info.desc
     : step === RISK_STEP
       ? "Choose which seats are staffed, how much freedom agents get by default, and the budget they trade inside. Hard limits are enforced by the risk engine, not by the agents."
-      : "Check the setup. You can come back from SETUP at any time. Demo runs on paper against live prices; Live needs a connected venue and a confirmation.";
+      : "Check the setup. You can come back from SETUP at any time. The desk runs on paper against live public prices. Live trading is not available yet.";
 
   return (
     <div className="hz-onb hz-glass" role="dialog" aria-modal="true" aria-label="Setup">
@@ -283,6 +288,13 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
             <div style={m(9.5, "0.2em", "var(--cFF9E2C)")}>STEP {String(step + 1).padStart(2, "0")} OF 0{STEP_COUNT}</div>
             <h1 className="hz-onb-title">{title}</h1>
             <p className="hz-onb-lead">{desc}</p>
+            {info && info.id !== "venue" && (
+              <div className="hz-onb-note" role="note">
+                {info.id === "data"
+                  ? "Prices come from the public Binance, Coinbase, Hyperliquid and Frankfurter endpoints whichever feeds you tick. The keyed feeds are placeholders for now."
+                  : "Preview. This choice is saved on this device but isn't connected to anything yet: the desk runs a simulated floor. Any key you type stays in this browser tab, is never sent anywhere, and is gone when you reload."}
+              </div>
+            )}
             {info && (
               <div className="hz-onb-grid" role={info.single ? "radiogroup" : "group"} aria-label={info.title}>
                 {info.items.map((it) => <ItemCard key={it.id} st={info} it={it} s={s} a={a} />)}
@@ -299,9 +311,11 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
         <div style={{ marginLeft: "auto", display: "flex", gap: 10 }}>
           {step === REVIEW_STEP ? (
             <>
-              <button className="hz-btn hz-btn--red" disabled={ready.length === 0} onClick={() => a.launch(true)}>
-                {ready.length ? "LAUNCH LIVE" : "LIVE NEEDS A VENUE"}
-              </button>
+              {LIVE_AVAILABLE && (
+                <button className="hz-btn hz-btn--red" disabled={ready.length === 0} onClick={() => a.launch(true)}>
+                  {ready.length ? "LAUNCH LIVE" : "LIVE NEEDS A VENUE"}
+                </button>
+              )}
               <button className="hz-btn hz-btn--solid" onClick={() => a.launch(false)}>LAUNCH DEMO DESK</button>
             </>
           ) : (

@@ -154,6 +154,14 @@ export interface Setup {
   lossStop: string;
   lev: string;
 }
+/**
+ * Live trading is not implemented: nothing in this repo can place a real order.
+ * Every path to Live mode is gated on this flag. Flip it only together with a real execution
+ * layer (venue adapters, server-side key storage, a hard risk gate) and tests for them.
+ */
+export const LIVE_AVAILABLE = false;
+export const APP_VERSION = "0.1";
+
 export const SETUP_KEY = "hermes.setup.v1";
 export const DEFAULT_SETUP: Setup = {
   done: false,
