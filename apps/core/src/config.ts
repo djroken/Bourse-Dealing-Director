@@ -4,6 +4,10 @@ export interface CoreConfig {
   allowedOrigins: string[];
   /** How often the market-data feed is polled. */
   feedIntervalMs: number;
+  /** Where the encrypted secret store lives. */
+  dataDir: string;
+  /** Raw HERMES_MASTER_KEY. Undefined disables the secret store. */
+  masterKey?: string;
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -23,6 +27,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     port,
     allowedOrigins: origins.length ? origins : DEFAULT_ORIGINS,
     feedIntervalMs: 5000,
+    dataDir: env.HERMES_DATA_DIR?.trim() || '.hermes',
+    masterKey: env.HERMES_MASTER_KEY?.trim() || undefined,
   };
 }
 

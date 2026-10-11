@@ -10,7 +10,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "watch": "node scripts/watch.mjs"
+    "watch": "node scripts/watch.mjs",
+    "keygen": "node scripts/keygen.mjs"
   },
   "dependencies": {
     "fastify": "^5.12.5",

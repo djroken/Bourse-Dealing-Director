@@ -2,7 +2,13 @@ import { isLoopback, loadConfig } from './config';
 import { buildServer } from './server';
 
 const config = loadConfig();
-const core = buildServer(config);
+let core: ReturnType<typeof buildServer>;
+try {
+  core = buildServer(config);
+} catch (err) {
+  console.error(err instanceof Error ? err.message : err);
+  process.exit(1);
+}
 
 if (!isLoopback(config.host)) {
   core.server.log.warn(
