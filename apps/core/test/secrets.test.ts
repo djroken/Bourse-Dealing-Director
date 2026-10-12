@@ -8,7 +8,7 @@ import { createEngine } from '../src/engine';
 import { openSecretStore, parseMasterKey } from '../src/secrets';
 import { buildServer } from '../src/server';
 
-const dir = () => mkdtempSync(join(tmpdir(), 'hermes-secrets-'));
+const dir = () => mkdtempSync(join(tmpdir(), 'bourse-secrets-'));
 const key = () => randomBytes(32);
 
 describe('parseMasterKey', () => {
@@ -18,7 +18,7 @@ describe('parseMasterKey', () => {
     expect(parseMasterKey(k.toString('base64')).equals(k)).toBe(true);
   });
   it.each(['', 'short', 'z'.repeat(64), randomBytes(16).toString('hex'), randomBytes(31).toString('base64')])('rejects %j', (bad) => {
-    expect(() => parseMasterKey(bad)).toThrow(/HERMES_MASTER_KEY/);
+    expect(() => parseMasterKey(bad)).toThrow(/BOURSE_MASTER_KEY/);
   });
 });
 
@@ -81,7 +81,7 @@ describe('/secrets routes', () => {
   });
   const boot = async (withKey: boolean) => {
     const config = {
-      ...loadConfig({ CORE_PORT: '0', CORE_HOST: '127.0.0.1', HERMES_DATA_DIR: dir(), ...(withKey ? { HERMES_MASTER_KEY: key().toString('hex') } : {}) }),
+      ...loadConfig({ CORE_PORT: '0', CORE_HOST: '127.0.0.1', BOURSE_DATA_DIR: dir(), ...(withKey ? { BOURSE_MASTER_KEY: key().toString('hex') } : {}) }),
       feedIntervalMs: 60_000,
     };
     running = buildServer(config, { engine: createEngine(), feedDeps: { now: Date.now, fetchJson: async () => { throw new Error('offline'); } } });
@@ -121,6 +121,6 @@ describe('/secrets routes', () => {
     expect(JSON.parse(await fetch(`${base}/secrets`).then((r) => r.text()))).toEqual({ enabled: false, secrets: [] });
     const r = await fetch(`${base}/secrets/x`, { method: 'PUT', headers: ORIGIN, body: JSON.stringify({ value: 'v' }) });
     expect(r.status).toBe(503);
-    expect(await r.text()).toContain('HERMES_MASTER_KEY');
+    expect(await r.text()).toContain('BOURSE_MASTER_KEY');
   });
 });

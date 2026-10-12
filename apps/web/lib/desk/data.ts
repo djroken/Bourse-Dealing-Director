@@ -1,6 +1,6 @@
 // Static content and types for the Desk, ported from the v2 prototype.
 // SEED_AGENTS / SCRIPT / FILL_TPL are the simulated floor (what the prototype fakes);
-// they get replaced by Hermes Core streams as the backend milestones land.
+// they get replaced by Bourse Core streams as the backend milestones land.
 
 export type Grp = "dir" | "exec" | "res" | "risk" | "quant";
 export type Autonomy = "SUGGEST" | "APPROVE" | "AUTO";
@@ -18,7 +18,7 @@ export const TINTS: Record<Grp, string> = {
 export const MODELS = [
   "claude-opus-4.5", "claude-sonnet-4.5", "claude-haiku-4.5", "gpt-5.1", "o4-mini",
   "gemini-2.5-pro", "llama-4-405b", "mistral-large-2", "deepseek-v3", "qwen3 (ollama, local)",
-  // Real model calls via Hermes Core. These only ever suggest; they never place an order on their own.
+  // Real model calls via Bourse Core. These only ever suggest; they never place an order on their own.
   "ollama:llama3.2", "openrouter-free:meta-llama/llama-3.3-70b-instruct:free",
 ];
 export const AUTONOMY: Autonomy[] = ["SUGGEST", "APPROVE", "AUTO"];
@@ -164,6 +164,7 @@ export interface Setup {
 export const LIVE_AVAILABLE = false;
 export const APP_VERSION = "0.1";
 
+// Storage keys and the "hermes" runtime id keep their original names from before the rename to Bourse, so saved setups survive.
 export const SETUP_KEY = "hermes.setup.v1";
 export const DEFAULT_SETUP: Setup = {
   done: false,
@@ -181,7 +182,7 @@ export const DEFAULT_SETUP: Setup = {
 };
 
 export const RUNTIME_NAMES: Record<string, string> = {
-  hermes: "Hermes native", claude: "Claude", openai: "OpenAI", openclaw: "OpenClaw", mcp: "MCP server", http: "Custom HTTP",
+  hermes: "Bourse native", claude: "Claude", openai: "OpenAI", openclaw: "OpenClaw", mcp: "MCP server", http: "Custom HTTP",
 };
 
 /** Venues that can unlock Live. `field` is the first credential field; Live needs it non-empty. */

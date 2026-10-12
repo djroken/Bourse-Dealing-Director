@@ -193,8 +193,8 @@ export function buildView(s: DeskState): DeskView {
   } as const)[s.feed];
   const muted = "var(--c9AA5B1)";
   const logBase: Array<{ level: string; text: string; tint: string; t?: number }> = [
-    { level: "BOOT", text: "hermes desk " + APP_VERSION + " · " + (core ? "core floor" : "simulated floor") + " · " + onFloor.length + " agents · mode " + (isLive ? "LIVE" : "demo / paper only"), tint: "var(--c6B7681)" },
-    { level: "RUNTIME", text: core ? "agent runtime → hermes core · scripted momentum agents, not AI models (" + runtimeName + " selected in setup, not connected yet)" : "agent runtime → simulated (" + runtimeName + " selected in setup, not connected yet)", tint: muted },
+    { level: "BOOT", text: "bourse desk " + APP_VERSION + " · " + (core ? "core floor" : "simulated floor") + " · " + onFloor.length + " agents · mode " + (isLive ? "LIVE" : "demo / paper only"), tint: "var(--c6B7681)" },
+    { level: "RUNTIME", text: core ? "agent runtime → bourse core · scripted momentum agents, not AI models (" + runtimeName + " selected in setup, not connected yet)" : "agent runtime → simulated (" + runtimeName + " selected in setup, not connected yet)", tint: muted },
     { level: "FEED", text: "prices → " + feedName, tint: s.feed === "SIMULATED" ? DOWN : muted },
     { level: "FEED", text: "charts → " + (s.chartSrc === "tv" ? "tradingview widget " : "native ") + LBL[s.chartSym].tv + " · candles " + (s.kl[s.chartSym] ? "loaded" : "pending"), tint: muted },
     { level: "FEED", text: "fx → frankfurter (ECB daily) " + (s.fx ? "EUR/USD " + s.fx.toFixed(4) : "pending"), tint: muted },
@@ -221,7 +221,7 @@ export function buildView(s: DeskState): DeskView {
   const vol = s.live[s.chartSym].vol;
   const light = resolved === "light";
   const tvSrc =
-    "https://s.tradingview.com/widgetembed/?frameElementId=hermes_tv&symbol=" + encodeURIComponent(LBL[s.chartSym].tv) +
+    "https://s.tradingview.com/widgetembed/?frameElementId=bourse_tv&symbol=" + encodeURIComponent(LBL[s.chartSym].tv) +
     "&interval=5&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=" + (light ? "FFFFFF" : "161A20") +
     "&studies=%5B%5D&theme=" + (light ? "light" : "dark") + "&style=1&timezone=Etc%2FUTC&withdateranges=0&hideideas=1&locale=en";
 
@@ -277,9 +277,9 @@ export function buildView(s: DeskState): DeskView {
     engineState: s.halted ? "HALTED BY OPERATOR" : core ? "CORE FLOOR" : "SIMULATED FLOOR",
     engineColor: s.halted ? DOWN : ACCENT,
     feedLabel: "FEED " + s.feed + (s.feed === "SIMULATED" ? "" : " · 5s"),
-    runtimeLabel: core ? "RUNTIME HERMES CORE (STUB AGENTS)" : "RUNTIME SIMULATED",
+    runtimeLabel: core ? "RUNTIME BOURSE CORE (STUB AGENTS)" : "RUNTIME SIMULATED",
     lastFill,
-    modeLabel: "HERMES v" + APP_VERSION + " · " + (isLive ? "LIVE" : "DEMO · PAPER ONLY"),
+    modeLabel: "BOURSE v" + APP_VERSION + " · " + (isLive ? "LIVE" : "DEMO · PAPER ONLY"),
     liveBanner: "LIVE · ORDERS ROUTE TO " + (venueNames || "NO VENUE").toUpperCase() + " · AGENTS ON AUTO PLACE REAL ORDERS",
     liveBannerShort: "LIVE · " + (venueNames || "NO VENUE").toUpperCase(),
     liveModal: {

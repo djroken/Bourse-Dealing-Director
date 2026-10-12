@@ -67,7 +67,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   let lastUpdate = 0;
   const lastBySymbol = new Map<string, FeedMsg>();
 
-  server.get('/', async () => ({ status: 'ok', service: 'hermes-core' }));
+  server.get('/', async () => ({ status: 'ok', service: 'bourse-core' }));
   server.get('/feeds', async () => ({
     intervalMs: config.feedIntervalMs,
     symbols: [...lastBySymbol.keys()],
@@ -85,16 +85,16 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
 
   // ---- secrets: write-only over HTTP. Values are never returned, only that they exist. -------------------------------
   const secrets = deps.secrets ?? (config.masterKey ? openSecretStore({ file: join(config.dataDir, 'secrets.json'), key: parseMasterKey(config.masterKey) }) : undefined);
-  const disabled = { error: 'secret store disabled: start core with HERMES_MASTER_KEY set (pnpm --filter core keygen)' };
-  // ---- MCP: guest agents trade their own paper book. Off unless HERMES_MCP_TOKEN is set. Stateless: one server per request.
+  const disabled = { error: 'secret store disabled: start core with BOURSE_MASTER_KEY set (pnpm --filter core keygen)' };
+  // ---- MCP: guest agents trade their own paper book. Off unless BOURSE_MCP_TOKEN is set. Stateless: one server per request.
   const mcpHandler = async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
     if (!config.mcpToken || config.mcpToken.length < 16) {
-      return reply.code(503).send({ error: 'MCP is off: start core with HERMES_MCP_TOKEN set to a random string of 16+ characters' });
+      return reply.code(503).send({ error: 'MCP is off: start core with BOURSE_MCP_TOKEN set to a random string of 16+ characters' });
     }
     if (req.headers.origin !== undefined) return reply.code(403).send({ error: 'MCP is for agents, not browsers' }); // blocks DNS-rebinding style pages
     if (!tokenOk(config.mcpToken, req.headers.authorization)) return reply.code(401).header('WWW-Authenticate', 'Bearer').send({ error: 'missing or wrong bearer token' });
     if (req.method !== 'POST') return reply.code(405).header('Allow', 'POST').send({ error: 'POST only (stateless MCP)' });
-    const name = String(req.headers[MCP_AGENT_HEADER] ?? '').slice(0, 64);
+    const name = String(req.headers[MCP_AGENT_HEADER] ?? req.headers['x-hermes-agent'] ?? '').slice(0, 64); // x-hermes-agent: old name, still accepted
     const guest = engine.registerGuest(name);
     if (!guest) return reply.code(429).send({ error: 'the floor already has the maximum number of guest agents' });
     const mcp = createMcpServer(engine, guest);

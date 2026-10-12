@@ -25,7 +25,7 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
       <div className="hz-mtop hz-glass">
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={m(15, "0.22em", "var(--cF2F5F7)", { fontWeight: 600 })}>HERMES</span>
+          <span style={m(15, "0.22em", "var(--cF2F5F7)", { fontWeight: 600 })}>BOURSE</span>
           <button className="hz-modepill" data-live={v.isLive} onClick={a.toggleMode}>{v.isLive ? "LIVE" : "DEMO"}</button>
         </div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>

@@ -1,6 +1,6 @@
 import { expect, openDesk, test } from "./fixtures";
 
-// Hermes has no execution layer. These tests pin down that no route reaches a "live" state.
+// Bourse has no execution layer. These tests pin down that no route reaches a "live" state.
 
 test("the LIVE button explains that live trading is not available", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

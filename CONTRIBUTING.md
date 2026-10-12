@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for looking. Hermes is an early prototype and a solo project, so small, focused PRs are easiest to review.
+Thanks for looking. Bourse is an early prototype and a solo project, so small, focused PRs are easiest to review.
 
 ## Setup
 

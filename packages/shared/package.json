@@ -1,7 +1,7 @@
 {
   "name": "shared",
   "version": "1.0.0",
-  "description": "Shared types, zod schemas and the default agent roster for Hermes.",
+  "description": "Shared types, zod schemas and the default agent roster for Bourse.",
   "main": "src/index.ts",
   "scripts": {
     "typecheck": "tsc --noEmit",

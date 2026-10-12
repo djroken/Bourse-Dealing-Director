@@ -30,5 +30,5 @@ coverage/
 playwright-report/
 test-results/
 
-# Hermes specific
-.hermes/
+# Bourse specific
+.bourse/

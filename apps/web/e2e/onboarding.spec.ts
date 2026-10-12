@@ -164,6 +164,6 @@ test.describe("saving keys to core", () => {
     );
     await openDesk(page);
     await page.locator(".hz-onb-card", { hasText: "Claude" }).first().click();
-    await expect(page.getByTestId(`secret-${KEY_ID}`)).toContainText("HERMES_MASTER_KEY");
+    await expect(page.getByTestId(`secret-${KEY_ID}`)).toContainText("BOURSE_MASTER_KEY");
   });
 });

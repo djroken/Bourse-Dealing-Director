@@ -63,9 +63,9 @@ function hydrate(base: DeskState): DeskState {
 export interface DeskOptions {
   /** Simulation tick in ms (prototype default 2200). */
   tickMs?: number;
-  /** Play the scripted floor conversation. Turn off once Hermes Core streams real events. */
+  /** Play the scripted floor conversation. Turn off once Bourse Core streams real events. */
   autoplay?: boolean;
-  /** Connect to Hermes Core's agent stream (default on). */
+  /** Connect to Bourse Core's agent stream (default on). */
   core?: boolean;
 }
 
@@ -123,7 +123,7 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
     return () => clearInterval(id);
   }, [patch, tickMs, autoplay]);
 
-  // ---- Hermes Core floor stream ---------------------------------------------
+  // ---- Bourse Core floor stream ---------------------------------------------
   // While connected, core's agents drive the floor and the scripted simulation pauses. If core isn't there (or goes
   // away) the desk stays on the simulated floor and keeps retrying quietly.
   const coreWs = useRef<WebSocket | null>(null);

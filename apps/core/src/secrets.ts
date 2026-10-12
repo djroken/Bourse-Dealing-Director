@@ -45,7 +45,7 @@ export function parseMasterKey(raw: string): Buffer {
     const b = Buffer.from(s, 'base64');
     if (b.length === 32) return b;
   }
-  throw new Error('HERMES_MASTER_KEY must be 32 random bytes as 64 hex characters or base64. Generate one with: pnpm --filter core keygen');
+  throw new Error('BOURSE_MASTER_KEY must be 32 random bytes as 64 hex characters or base64. Generate one with: pnpm --filter core keygen');
 }
 
 const encrypt = (key: Buffer, id: string, plain: string): Omit<Entry, 'updatedAt'> => {
@@ -70,7 +70,7 @@ export function openSecretStore(opts: { file: string; key: Buffer; now?: () => n
   if (existsSync(file)) {
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as FileShape;
     if (parsed?.v !== 1 || typeof parsed.secrets !== 'object' || parsed.secrets === null) {
-      throw new Error(`${file} is not a Hermes secret store`);
+      throw new Error(`${file} is not a Bourse secret store`);
     }
     data = parsed;
     // Fail loudly at startup if the key is wrong, not on first use.
@@ -78,7 +78,7 @@ export function openSecretStore(opts: { file: string; key: Buffer; now?: () => n
       try {
         decrypt(key, id, e);
       } catch {
-        throw new Error(`Cannot decrypt ${file}: HERMES_MASTER_KEY does not match the key it was written with`);
+        throw new Error(`Cannot decrypt ${file}: BOURSE_MASTER_KEY does not match the key it was written with`);
       }
     }
   }

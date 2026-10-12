@@ -1,5 +1,5 @@
 // Public market-data fetchers (no API keys). Browser-side for now, mirroring the v2 prototype.
-// Production moves this polling into Hermes Core and streams to the UI over WebSocket;
+// Production moves this polling into Bourse Core and streams to the UI over WebSocket;
 // useDesk is the only caller, so that swap is contained to this file + useDesk.
 
 import { LBL, TAPE } from "./data";

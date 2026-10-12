@@ -14,7 +14,7 @@ import { TRADED_SYMBOLS } from './engine';
  *  - Everything the guest sends is untrusted: sizes and symbols are validated, chat text is cleaned and rate-limited.
  */
 
-export const MCP_AGENT_HEADER = 'x-hermes-agent';
+export const MCP_AGENT_HEADER = 'x-bourse-agent';
 
 /** Constant-time bearer check. An unset or short token disables MCP entirely. */
 export function tokenOk(expected: string | undefined, header: string | undefined): boolean {
@@ -30,7 +30,7 @@ const json = (v: unknown) => ({ content: [{ type: 'text' as const, text: JSON.st
 const fail = (reason: string) => ({ content: [{ type: 'text' as const, text: JSON.stringify({ ok: false, reason }) }], isError: true });
 
 export function createMcpServer(engine: Engine, guest: FloorAgent): McpServer {
-  const server = new McpServer({ name: 'hermes-trading-floor', version: '0.1.0' });
+  const server = new McpServer({ name: 'bourse-trading-floor', version: '0.1.0' });
   const Symbol_ = z.enum(TRADED_SYMBOLS as [string, ...string[]]);
 
   server.registerTool(

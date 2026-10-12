@@ -33,7 +33,7 @@ async function boot(mcpToken: string | null = TOKEN) {
 }
 async function connect(base: string, agent = 'Test Bot', token = TOKEN) {
   const c = new Client({ name: 'test', version: '0' });
-  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}`, 'X-Hermes-Agent': agent } } }));
+  await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${token}`, 'X-Bourse-Agent': agent } } }));
   clients.push(c);
   return c;
 }
@@ -75,6 +75,15 @@ describe('/mcp access', () => {
 });
 
 describe('guest agent over MCP', () => {
+  it('still accepts the old X-Hermes-Agent header', async () => {
+    const { base, core } = await boot();
+    const c = new Client({ name: 'test', version: '0' });
+    await c.connect(new StreamableHTTPClientTransport(new URL(`${base}/mcp`), { requestInit: { headers: { Authorization: `Bearer ${TOKEN}`, 'X-Hermes-Agent': 'Legacy Bot' } } }));
+    clients.push(c);
+    await c.listTools();
+    expect(core.engine.agents.find((a) => a.external)!.config.role).toBe('Guest: Legacy Bot');
+  });
+
   it('lists the six tools', async () => {
     const { base } = await boot();
     const c = await connect(base);
@@ -146,7 +155,7 @@ describe('guest agent over MCP', () => {
     await connect(base, '<script>alert(1)</script>');
     expect(core.engine.agents.find((x) => x.external)!.config.name).toBe('scriptalert1script');
     for (let i = 0; i < 7; i++) await connect(base, `Bot ${i}`);
-    const r = await fetch(`${base}/mcp`, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, 'X-Hermes-Agent': 'One too many', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: '{}' });
+    const r = await fetch(`${base}/mcp`, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}`, 'X-Bourse-Agent': 'One too many', 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: '{}' });
     expect(r.status).toBe(429);
   });
 
