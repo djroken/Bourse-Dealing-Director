@@ -17,7 +17,7 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hermes · Agentic Trading Floor",
+  title: "Bourse · Agentic Trading Floor",
   description: "A plug-and-play trading desk staffed by AI agents.",
 };
 

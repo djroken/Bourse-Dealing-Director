@@ -10,16 +10,16 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 |---|---|---|
 | `CORE_HOST` | `127.0.0.1` | Interface to bind. Leave on loopback unless you add your own auth and TLS in front. |
 | `CORE_PORT` | `4000` | Port. |
-| `HERMES_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64). Enables the secret store. `pnpm --filter core keygen` makes one. |
-| `HERMES_MCP_TOKEN` | unset | 16+ random characters. Switches on `/mcp` for guest agents. |
-| `HERMES_DATA_DIR` | `.hermes` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
+| `BOURSE_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64). Enables the secret store. `pnpm --filter core keygen` makes one. |
+| `BOURSE_MCP_TOKEN` | unset | 16+ random characters. Switches on `/mcp` for guest agents. |
+| `BOURSE_DATA_DIR` | `.bourse` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
 
 ## HTTP
 
 | Method | Path | Returns |
 |---|---|---|
-| GET | `/` | `{ "status": "ok", "service": "hermes-core" }` |
+| GET | `/` | `{ "status": "ok", "service": "bourse-core" }` |
 | GET | `/feeds` | Feed status: `intervalMs`, `symbols` seen so far, `sources`, `lastUpdate` (ms epoch, 0 before the first poll) |
 | GET | `/agents` | Array of agent summaries |
 | GET | `/agents/:id` | One agent summary, or `404 { "error": "not found" }` |
@@ -139,18 +139,18 @@ Every agent decision passes through `apps/core/src/risk.ts` before it is emitted
 
 Any MCP client (Claude, OpenAI, OpenClaw, ...) can connect to `http://127.0.0.1:4000/mcp` and trade a **paper** account on live prices. There is no route from here to a venue.
 
-**Switch it on** by starting core with `HERMES_MCP_TOKEN` set to a random string of at least 16 characters (e.g. `openssl rand -hex 24`). Without it `/mcp` answers 503.
+**Switch it on** by starting core with `BOURSE_MCP_TOKEN` set to a random string of at least 16 characters (e.g. `openssl rand -hex 24`). Without it `/mcp` answers 503.
 
 **Connect** with streamable HTTP and two headers:
 
 ```jsonc
-{ "mcpServers": { "hermes": { "type": "http", "url": "http://127.0.0.1:4000/mcp",
-  "headers": { "Authorization": "Bearer <token>", "X-Hermes-Agent": "My Agent" } } } }
+{ "mcpServers": { "bourse": { "type": "http", "url": "http://127.0.0.1:4000/mcp",
+  "headers": { "Authorization": "Bearer <token>", "X-Bourse-Agent": "My Agent" } } } }
 ```
 
-or with Claude Code: `claude mcp add --transport http hermes http://127.0.0.1:4000/mcp --header "Authorization: Bearer <token>" --header "X-Hermes-Agent: My Agent"`.
+or with Claude Code: `claude mcp add --transport http bourse http://127.0.0.1:4000/mcp --header "Authorization: Bearer <token>" --header "X-Bourse-Agent: My Agent"`.
 
-`X-Hermes-Agent` names the agent (letters, digits, space, `.`, `_`, `-`, 24 chars). Each name gets its own seat, `Guest: <name>`, with a fresh $100k paper book that lasts until core restarts; the same name reconnects to the same book. Up to 8 guests. Guests appear in the Desk's chat and blotter.
+`X-Bourse-Agent` names the agent (letters, digits, space, `.`, `_`, `-`, 24 chars). Each name gets its own seat, `Guest: <name>`, with a fresh $100k paper book that lasts until core restarts; the same name reconnects to the same book. Up to 8 guests. Guests appear in the Desk's chat and blotter.
 
 | Tool | What it does |
 |---|---|

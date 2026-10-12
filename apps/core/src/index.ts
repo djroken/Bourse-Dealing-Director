@@ -18,7 +18,7 @@ if (!isLoopback(config.host)) {
 
 core
   .start()
-  .then((port) => core.server.log.info(`Hermes Core listening on http://${config.host}:${port}`))
+  .then((port) => core.server.log.info(`Bourse Core listening on http://${config.host}:${port}`))
   .catch((err: unknown) => {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);

@@ -29,7 +29,7 @@ export default function Modals({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
           <div style={m(9.5, "0.2em", "var(--cFF9E2C)")}>LIVE TRADING</div>
           <div style={{ fontSize: 18, fontWeight: 600, color: "var(--cF2F5F7)" }}>Live trading isn&apos;t available yet</div>
           <div style={{ fontSize: 13, lineHeight: 1.6, color: "var(--cA9B3BC)", textWrap: "pretty" }}>
-            Hermes only paper trades. Nothing in this version can place a real order, whatever you enter in Setup. The
+            Bourse only paper trades. Nothing in this version can place a real order, whatever you enter in Setup. The
             desk runs a simulated floor against real public prices, with simulated fills.
           </div>
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>

@@ -154,3 +154,13 @@ describe('websocket', () => {
     expect(await closed).toBe(1009);
   });
 });
+
+describe('config: legacy HERMES_* names', () => {
+  it('still reads the old env names, and BOURSE_* wins when both are set', () => {
+    expect(loadConfig({ HERMES_MCP_TOKEN: 'old-token-0123456789' }).mcpToken).toBe('old-token-0123456789');
+    expect(loadConfig({ HERMES_MCP_TOKEN: 'old', BOURSE_MCP_TOKEN: 'new-token-0123456789' }).mcpToken).toBe('new-token-0123456789');
+    expect(loadConfig({ HERMES_MASTER_KEY: 'k' }).masterKey).toBe('k');
+    expect(loadConfig({ BOURSE_DATA_DIR: '/x' }).dataDir).toBe('/x');
+    expect(loadConfig({ HERMES_DATA_DIR: '/y' }).dataDir).toBe('/y');
+  });
+});

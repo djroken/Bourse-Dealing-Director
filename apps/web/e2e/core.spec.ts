@@ -5,7 +5,7 @@ test.beforeEach(async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
-/** Stands in for Hermes Core's /agents stream. */
+/** Stands in for Bourse Core's /agents stream. */
 async function mockCore(page: Page) {
   const sent: string[] = [];
   let sock: WebSocketRoute | undefined;
@@ -29,7 +29,7 @@ test("with core connected the floor shows core's events instead of the scripted 
   await openDesk(page);
   await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
   await expect(page.locator(".hz-footer")).toContainText("CORE FLOOR");
-  await expect(page.locator(".hz-log")).toContainText("Connected to Hermes Core");
+  await expect(page.locator(".hz-log")).toContainText("Connected to Bourse Core");
   await expect(page.locator(".hz-log")).not.toContainText("CPI"); // scripted demo lines are gone
 
   const now = Date.now();
@@ -70,13 +70,13 @@ test("HALT ALL tells core, and losing core falls back to the simulated floor", a
 
   core.drop();
   await expect(page.locator(".hz-sim")).toContainText("SIMULATED FLOOR");
-  await expect(page.locator(".hz-log")).toContainText("Lost connection to Hermes Core");
+  await expect(page.locator(".hz-log")).toContainText("Lost connection to Bourse Core");
 });
 
 test("with no core running the desk is the simulated floor and says so", async ({ page }) => {
   await openDesk(page);
   await expect(page.locator(".hz-sim")).toContainText("SIMULATED FLOOR");
-  await expect(page.locator(".hz-log")).not.toContainText("Hermes Core");
+  await expect(page.locator(".hz-log")).not.toContainText("Bourse Core");
 });
 
 test("the roster shows core's book, and approving an idea sends one order to core", async ({ page }) => {

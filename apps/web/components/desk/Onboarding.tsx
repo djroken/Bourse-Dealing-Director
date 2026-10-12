@@ -128,7 +128,7 @@ function SecretRow({ id, value, core, clear }: { id: string; value: string; core
           {st === "checking"
             ? "Checking core…"
             : st === "disabled"
-              ? "Core's key store is off: start core with HERMES_MASTER_KEY to save keys. Until then this value stays in this tab only."
+              ? "Core's key store is off: start core with BOURSE_MASTER_KEY to save keys. Until then this value stays in this tab only."
               : "Core isn't running, so this key stays in this tab only. Start it with pnpm dev:core."}
         </span>
       )}
@@ -141,7 +141,7 @@ function McpBlock() {
   return (
     <div className="hz-onb-mcp">
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--cF2F5F7)" }}>Plug Hermes into your agent</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--cF2F5F7)" }}>Plug Bourse into your agent</div>
         <button
           className="hz-btn hz-btn--sm"
           style={{ marginLeft: "auto" }}
@@ -156,7 +156,7 @@ function McpBlock() {
         </button>
       </div>
       <div style={{ fontSize: 12.5, lineHeight: 1.55, color: "var(--c98A3AD)" }}>
-        Config for any MCP client that supports HTTP servers. Start core with HERMES_MCP_TOKEN set (16+ random characters). Each agent gets its own $100k paper account on live prices, with fixed risk limits. No real money, ever.
+        Config for any MCP client that supports HTTP servers. Start core with BOURSE_MCP_TOKEN set (16+ random characters). Each agent gets its own $100k paper account on live prices, with fixed risk limits. No real money, ever.
       </div>
       <pre className="hz-onb-code">{MCP_SNIPPET}</pre>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -248,7 +248,7 @@ function ReviewStep({ s, v }: { s: DeskState; v: DeskView }) {
   const ready = venuesReady(s.setup);
   const seats = s.setup.agentsOn.filter((x) => x !== false).length;
   const rows: Array<[string, string, boolean]> = [
-    ["Agent runtime", RUNTIME_NAMES[s.setup.runtime] ?? "Hermes native", true],
+    ["Agent runtime", RUNTIME_NAMES[s.setup.runtime] ?? "Bourse native", true],
     ["Model providers", models.length ? models.join(", ") : "None. Add one to run agents", models.length > 0],
     ["Market data", feeds.length + " feeds · " + feeds.slice(0, 3).join(", ") + (feeds.length > 3 ? " …" : ""), true],
     ["Live trading", ready.length ? ready.map((r) => r.name).join(", ") : "Not available yet · paper trading only", true],
@@ -293,7 +293,7 @@ export default function Onboarding({ s, v, a }: { s: DeskState; v: DeskView; a: 
   return (
     <div className="hz-onb hz-glass" role="dialog" aria-modal="true" aria-label="Setup">
       <header className="hz-onb-top">
-        <div style={m(15, "0.24em", "var(--cF2F5F7)", { fontWeight: 600 })}>HERMES</div>
+        <div style={m(15, "0.24em", "var(--cF2F5F7)", { fontWeight: 600 })}>BOURSE</div>
         {!mobile && <div style={m(9, "0.2em", "var(--c6B7681)")}>SETUP</div>}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
           {!mobile && <ThemeSwitch s={s} a={a} />}

@@ -79,7 +79,7 @@ export interface DeskState {
   funding: number | null;
   fx: number | null;
   gotLive: boolean;
-  /** Link to Hermes Core's agent stream. While "live" the scripted simulation is paused. */
+  /** Link to Bourse Core's agent stream. While "live" the scripted simulation is paused. */
   core: "connecting" | "live" | "offline";
   /** Per-seat books from core, by seat index. Only seats that have traded appear. */
   coreBook: Record<number, CoreBook>;

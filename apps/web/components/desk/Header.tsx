@@ -17,7 +17,7 @@ export default function Header({ s, v, a }: Props) {
     <>
       <header className="hz-header hz-glass">
         <div className="hz-brand">
-          <div style={m(16, "0.24em", "var(--cF2F5F7)", { fontWeight: 600 })}>HERMES</div>
+          <div style={m(16, "0.24em", "var(--cF2F5F7)", { fontWeight: 600 })}>BOURSE</div>
           <div style={m(8.5, "0.2em", "var(--c6B7681)", { marginTop: 2 })}>AGENTIC TRADING FLOOR</div>
         </div>
 

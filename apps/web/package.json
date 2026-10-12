@@ -28,6 +28,6 @@
     "vitest": "^3.2.4",
     "@playwright/test": "^1.55.0"
   },
-  "description": "Hermes Desk: the trading-floor UI.",
+  "description": "Bourse Desk: the trading-floor UI.",
   "license": "MIT"
 }

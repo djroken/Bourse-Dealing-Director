@@ -1,4 +1,4 @@
-# Hermes Trading Floor
+# Bourse Trading Floor
 
 [![CI](https://github.com/djroken/Hermes-Trading-Floor/actions/workflows/ci.yml/badge.svg)](https://github.com/djroken/Hermes-Trading-Floor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -6,14 +6,14 @@
 **An agentic trading desk: a floor of AI agents you watch, instruct and approve.**
 
 > **Early prototype. Paper trading only. Not financial advice.**
-> Hermes cannot place real orders: there is no exchange integration, and Live mode is deliberately switched off.
+> Bourse cannot place real orders: there is no exchange integration, and Live mode is deliberately switched off.
 > The agents on the desk today are scripted, and the numbers they trade are simulated. See [What works today](#what-works-today).
 
-![The Hermes desk](docs/screenshots/desk-dark.png)
+![The Bourse desk](docs/screenshots/desk-dark.png)
 
 ## What it is
 
-Hermes is a desk staffed by eight agent seats (Dealing Director, Execution Trader, Market Maker, Quant, Research, On-chain, Risk Officer, Sentiment). You watch them talk, give them instructions, and approve or reject the trades they propose. Each seat has its own model, autonomy level, mandate and risk limits.
+Bourse is a desk staffed by eight agent seats (Dealing Director, Execution Trader, Market Maker, Quant, Research, On-chain, Risk Officer, Sentiment). You watch them talk, give them instructions, and approve or reject the trades they propose. Each seat has its own model, autonomy level, mandate and risk limits.
 
 The idea is a desk you can run on its own, or plug your own agents into. The pieces are here to build toward that. Only some of them are connected yet.
 
@@ -24,13 +24,13 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Desk UI: roster, floor chat, blotter, console, chart rail, agent drawer | **Working** | Dark, light, system and glass themes; responsive down to phones |
 | Approvals queue | **Working** | SUGGEST and APPROVE agents send trades to the queue; AUTO agents fill immediately (paper) |
 | Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets stay in memory unless you save them to core's encrypted store |
-| Encrypted key store (core) | **Working, nothing consumes it yet** | AES-256-GCM at rest, write-only over HTTP. Needs `HERMES_MASTER_KEY` |
+| Encrypted key store (core) | **Working; the OpenRouter adapter reads from it** | AES-256-GCM at rest, write-only over HTTP. Needs `BOURSE_MASTER_KEY` |
 | Market prices and candles | **Real** | Fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed |
 | Floor chat, fills, approvals | **Core's stub agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule (not AI models); AUTO seats fill on the paper venue, SUGGEST/APPROVE seats send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
-| Hermes Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, an agent engine (stub rules, or Ollama/OpenRouter models that only suggest) with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
-| Guest agents over MCP | **Working** | Set `HERMES_MCP_TOKEN` and any MCP client can connect to `/mcp`, get its own $100k paper account on live prices and trade it through the same risk gate. See [docs/core-api.md](docs/core-api.md) |
+| Bourse Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, an agent engine (stub rules, or Ollama/OpenRouter models that only suggest) with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
+| Guest agents over MCP | **Working** | Set `BOURSE_MCP_TOKEN` and any MCP client can connect to `/mcp`, get its own $100k paper account on live prices and trade it through the same risk gate. See [docs/core-api.md](docs/core-api.md) |
 | Anthropic/OpenAI/Gemini adapters, runtime adapters | Planned | |
 | Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
 
@@ -69,7 +69,7 @@ flowchart LR
   subgraph Browser["Your browser"]
     D["Desk UI (Next.js)"]
   end
-  subgraph Core["Hermes Core (Fastify)"]
+  subgraph Core["Bourse Core (Fastify)"]
     F["Feed poller"]
     E["Agent engine and risk gate"]
     B[("Paper books")]
@@ -98,7 +98,7 @@ flowchart LR
 
 - **No real orders.** Nothing in this repository can send an order to an exchange or move funds.
 - **Core has no authentication.** It binds to `127.0.0.1` by default, checks the browser `Origin` on WebSocket connections and state-changing requests, and warns if you expose it. Don't put it on a network without adding authentication in front of it.
-- **Secrets.** Anything you type into the setup flow is kept in memory in your browser tab and never written to browser storage. If you run core with `HERMES_MASTER_KEY` set, you can save a key to core's store: it is encrypted at rest (AES-256-GCM), the master key never touches disk, and the API can write and delete keys but never read them back. The OpenRouter adapter reads its key from the store; nothing else uses stored keys yet, and there are no exchange integrations. Core has no login, so keep it on localhost.
+- **Secrets.** Anything you type into the setup flow is kept in memory in your browser tab and never written to browser storage. If you run core with `BOURSE_MASTER_KEY` set, you can save a key to core's store: it is encrypted at rest (AES-256-GCM), the master key never touches disk, and the API can write and delete keys but never read them back. The OpenRouter adapter reads its key from the store; nothing else uses stored keys yet, and there are no exchange integrations. Core has no login, so keep it on localhost.
 - **The risk gate fails closed.** Core vetoes an AUTO decision once an agent's daily loss reaches its stop, and treats bad input as a veto. It is covered by tests.
 - **Data comes from third parties.** Prices are fetched from public endpoints you don't control, and can be wrong, late or unavailable. The desk labels the feed it is using and says when it has fallen back to simulated prices.
 
@@ -124,7 +124,7 @@ Issues and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Disclaimer
 
-Hermes is software for experimentation. It is not financial, investment or legal advice, and nothing it displays is a recommendation to buy or sell anything. By default the agents are stub rules, not AI, and the simulated figures are not real. Model-backed seats only suggest, and what a model says is not advice. If you build on it to trade real money, you do so entirely at your own risk and are responsible for the code you run.
+Bourse is software for experimentation. It is not financial, investment or legal advice, and nothing it displays is a recommendation to buy or sell anything. By default the agents are stub rules, not AI, and the simulated figures are not real. Model-backed seats only suggest, and what a model says is not advice. If you build on it to trade real money, you do so entirely at your own risk and are responsible for the code you run.
 
 ## Licence
 

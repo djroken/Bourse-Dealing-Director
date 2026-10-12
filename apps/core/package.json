@@ -2,7 +2,7 @@
   "name": "core",
   "version": "0.1.0",
   "private": true,
-  "description": "Hermes Core: market-data feed and the agent floor, served over HTTP and WebSocket.",
+  "description": "Bourse Core: market-data feed and the agent floor, served over HTTP and WebSocket.",
   "license": "MIT",
   "type": "module",
   "scripts": {

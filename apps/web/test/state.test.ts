@@ -120,7 +120,7 @@ describe("view", () => {
     expect(v.modeLabel).toContain("PAPER ONLY");
     expect(v.centerMeta).toContain("SIMULATED");
     expect(text).not.toContain("ENGINE LIVE");
-    expect(text).not.toContain("hermes-core 0.9");
+    expect(text).not.toContain("bourse-core 0.9");
     expect(text).not.toContain("S-2291");
     expect(v.isLive).toBe(false);
   });

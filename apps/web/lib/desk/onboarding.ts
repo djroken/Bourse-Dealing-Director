@@ -44,14 +44,14 @@ export const STEPS: OnbStep[] = [
   {
     id: "runtime", num: "01", label: "Agent runtime", sub: "Where the agents think", single: true,
     title: "Connect an agent runtime",
-    desc: "Hermes can run the floor itself, or plug into an agent you already use. Pick one now; you can switch any time from Setup.",
+    desc: "Bourse can run the floor itself, or plug into an agent you already use. Pick one now; you can switch any time from Setup.",
     items: [
-      { id: "hermes", name: "Hermes native", tag: "DEFAULT", desc: "Built-in orchestrator. Each agent runs on the model provider you add in the next step.", fields: [] },
+      { id: "hermes", name: "Bourse native", tag: "DEFAULT", desc: "Built-in orchestrator. Each agent runs on the model provider you add in the next step.", fields: [] },
       { id: "claude", name: "Claude", tag: "API KEY", desc: "Run the floor on Claude through the Messages API, with tool use for quotes and orders.", fields: KEY("sk-ant-…") },
       { id: "openai", name: "OpenAI", tag: "API KEY", desc: "Responses API with function calling. Works with GPT and o-series models.", fields: KEY("sk-…") },
-      { id: "openclaw", name: "OpenClaw", tag: "ENDPOINT", desc: "Point at a running OpenClaw gateway. Hermes registers the desk as a skill.", fields: [F("url", "GATEWAY URL", "https://your-openclaw-host"), F("token", "TOKEN", "••••••••", "password")] },
-      { id: "mcp", name: "MCP server", tag: "ENDPOINT", desc: "Any MCP-capable agent. Hermes exposes quotes, orders and the floor chat as tools.", fields: [F("url", "SERVER URL", "https://…/mcp"), F("token", "BEARER TOKEN", "••••••••", "password")] },
-      { id: "http", name: "Custom HTTP", tag: "WEBHOOK", desc: "Your own agent. Hermes POSTs floor state each tick; you reply with decisions as JSON.", fields: [F("url", "WEBHOOK URL", "https://your-agent/decide"), F("secret", "SIGNING SECRET", "••••••••", "password")] },
+      { id: "openclaw", name: "OpenClaw", tag: "ENDPOINT", desc: "Point at a running OpenClaw gateway. Bourse registers the desk as a skill.", fields: [F("url", "GATEWAY URL", "https://your-openclaw-host"), F("token", "TOKEN", "••••••••", "password")] },
+      { id: "mcp", name: "MCP server", tag: "ENDPOINT", desc: "Any MCP-capable agent. Bourse exposes quotes, orders and the floor chat as tools.", fields: [F("url", "SERVER URL", "https://…/mcp"), F("token", "BEARER TOKEN", "••••••••", "password")] },
+      { id: "http", name: "Custom HTTP", tag: "WEBHOOK", desc: "Your own agent. Bourse POSTs floor state each tick; you reply with decisions as JSON.", fields: [F("url", "WEBHOOK URL", "https://your-agent/decide"), F("secret", "SIGNING SECRET", "••••••••", "password")] },
     ],
   },
   {
@@ -80,13 +80,13 @@ export const STEPS: OnbStep[] = [
       { id: "coingecko", name: "CoinGecko", tag: "FREE TIER", desc: "Prices and market caps for long-tail tokens. Demo key optional.", fields: [F("key", "DEMO KEY (OPTIONAL)", "CG-…", "password")] },
       { id: "finnhub", name: "Finnhub", tag: "FREE KEY", desc: "US equities, company news and the earnings calendar.", fields: KEY("Finnhub token") },
       { id: "twelvedata", name: "Twelve Data", tag: "FREE KEY", desc: "Equities, FX, ETFs and indices across global exchanges.", fields: KEY("Twelve Data key") },
-      { id: "tradingview", name: "TradingView", tag: "CHARTS + ALERTS", desc: "TradingView charts on the desk. Point TradingView alerts at the webhook below to send signals to the floor.", fields: [F("hook", "ALERT WEBHOOK URL", "", "text", { v: "https://<your-hermes-host>/hooks/tradingview", ro: true }), F("pass", "ALERT PASSPHRASE", "Set a shared secret", "password")] },
+      { id: "tradingview", name: "TradingView", tag: "CHARTS + ALERTS", desc: "TradingView charts on the desk. Point TradingView alerts at the webhook below to send signals to the floor.", fields: [F("hook", "ALERT WEBHOOK URL", "", "text", { v: "https://<your-bourse-host>/hooks/tradingview", ro: true }), F("pass", "ALERT PASSPHRASE", "Set a shared secret", "password")] },
     ],
   },
   {
     id: "venue", num: "04", label: "Venues & wallets", sub: "Live: coming soon",
     title: "Venues and wallets",
-    desc: "Live trading isn't built yet, so the venues below are placeholders for the integrations on the roadmap. Hermes only paper trades: nothing you do here can place a real order, and there is no field to enter exchange keys.",
+    desc: "Live trading isn't built yet, so the venues below are placeholders for the integrations on the roadmap. Bourse only paper trades: nothing you do here can place a real order, and there is no field to enter exchange keys.",
     items: [
       { id: "paper", name: "Paper venue", tag: "DEFAULT", desc: "Simulated fills at the live mid. Always on in Demo.", fields: [], locked: true },
       { id: "binance", name: "Binance", tag: "API KEY", desc: "Spot and USDⓈ-M perpetuals.", fields: KEYSEC(), soon: true },
@@ -114,12 +114,12 @@ export const STEP_RAIL: Array<{ num: string; label: string; sub: string }> = [
 export const MCP_TOOLS = ["get_quotes", "get_positions", "place_order", "get_risk", "read_floor", "post_to_floor"];
 export const MCP_SNIPPET = `{
   "mcpServers": {
-    "hermes": {
+    "bourse": {
       "type": "http",
       "url": "http://127.0.0.1:4000/mcp",
       "headers": {
-        "Authorization": "Bearer <your HERMES_MCP_TOKEN>",
-        "X-Hermes-Agent": "My Agent"
+        "Authorization": "Bearer <your BOURSE_MCP_TOKEN>",
+        "X-Bourse-Agent": "My Agent"
       }
     }
   }

@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Hermes Desk design tokens.
+ * Bourse Desk design tokens.
  * Every colour is a CSS variable named after its DARK hex (--c161A20, --w07 …).
  * Dark is the default, defined here. Light / Glass are variable maps applied to <html>
  * at runtime by lib/desk/theme.ts, so nothing below ever needs a theme-specific rule.

@@ -5,7 +5,7 @@ import type { Approval, DeskState, Fill, SeqEvent } from "./state";
 import { walk } from "./format";
 
 /**
- * The Desk's side of Hermes Core's /agents stream. Pure functions: the socket lives in useDesk, everything it receives
+ * The Desk's side of Bourse Core's /agents stream. Pure functions: the socket lives in useDesk, everything it receives
  * goes through `parseCoreMsg` (untrusted input) and `applyCoreMsg` (state in, patch out).
  */
 
@@ -84,7 +84,7 @@ const push = (seq: SeqEvent[], e: SeqEvent): SeqEvent[] => seq.concat([e]).slice
 export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
   return {
     core: "live",
-    seq: [{ sysText: "Connected to Hermes Core. The scripted conversation is off; you are seeing events from core's stub agents.", t: now }],
+    seq: [{ sysText: "Connected to Bourse Core. The scripted conversation is off; you are seeing events from core's stub agents.", t: now }],
     fills: [],
     approvals: [],
     coreBook: {},
@@ -94,7 +94,7 @@ export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
 
 export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<DeskState> {
   if (was !== "live") return { core: "offline" };
-  return { core: "offline", seq: push(s.seq, { sysText: "Lost connection to Hermes Core. Back to the simulated floor.", t: now }) };
+  return { core: "offline", seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
 }
 
 /** Guest agents (connected over MCP) have no seat on the Desk roster; their activity shows in the chat and blotter. */

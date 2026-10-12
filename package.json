@@ -1,5 +1,5 @@
 {
-  "name": "hermes-trading-floor",
+  "name": "bourse-trading-floor",
   "version": "0.1.0",
   "private": true,
   "description": "An agentic trading desk: a floor of AI agents you watch, instruct and approve. Paper trading only.",

@@ -4,7 +4,7 @@ import { STEPS, isSecretVal, keyOf, persistable, valKey } from "../lib/desk/onbo
 import { venuesReady } from "../lib/desk/state";
 
 describe("live trading is not available", () => {
-  // Tripwire. Hermes has no execution layer: nothing can place a real order. If you are flipping this flag,
+  // Tripwire. Bourse has no execution layer: nothing can place a real order. If you are flipping this flag,
   // you are claiming real orders can be routed, so build the execution layer, the server-side key store and a hard
   // risk gate first, then update this test and the README together.
   it("LIVE_AVAILABLE stays false until an execution layer exists", () => {
