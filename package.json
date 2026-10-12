@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/djroken/Hermes-Trading-Floor.git"
+    "url": "git+https://github.com/djroken/Bourse-Trading-Floor.git"
   },
   "engines": {
     "node": ">=22.13"

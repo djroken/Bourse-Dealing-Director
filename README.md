@@ -1,6 +1,6 @@
 # Bourse Trading Floor
 
-[![CI](https://github.com/djroken/Hermes-Trading-Floor/actions/workflows/ci.yml/badge.svg)](https://github.com/djroken/Hermes-Trading-Floor/actions/workflows/ci.yml)
+[![CI](https://github.com/djroken/Bourse-Trading-Floor/actions/workflows/ci.yml/badge.svg)](https://github.com/djroken/Bourse-Trading-Floor/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **An agentic trading desk: a floor of AI agents you watch, instruct and approve.**
@@ -39,8 +39,8 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 You need [Node.js](https://nodejs.org) 22.13 or newer and [pnpm](https://pnpm.io/installation) 11 (`corepack enable` sets it up from the repo's `packageManager` field).
 
 ```bash
-git clone https://github.com/djroken/Hermes-Trading-Floor.git
-cd Hermes-Trading-Floor
+git clone https://github.com/djroken/Bourse-Trading-Floor.git
+cd Bourse-Trading-Floor
 pnpm install
 pnpm dev
 ```
