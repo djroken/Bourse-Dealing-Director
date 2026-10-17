@@ -6,9 +6,9 @@
 
 **An agentic trading desk: a floor of AI agents you watch, instruct and approve.**
 
-> **Work in progress.** Bourse is an early prototype under active development, shared so people can follow along and try it. Expect rough edges and breaking changes, and please open an issue if something doesn't work.
+> **Work in progress.** Bourse is a live trading desk run by AI agents, with a paper account on the same live market data so you can train and test agents safely before they touch real money. Today only the paper side works: live order routing is not built yet and Live mode is locked. Expect rough edges and breaking changes, and please open an issue if something doesn't work.
 >
-> **Paper trading only. Not financial advice.** Bourse cannot place real orders: there is no exchange integration, and Live mode is deliberately switched off. Prices are live; every fill lands on a paper book. See [What works today](#what-works-today).
+> **Not financial advice.** When live trading arrives it will be off by default, use your own exchange keys, and be entirely at your own risk.
 
 ![The Bourse desk](docs/screenshots/desk-dark.png)
 
@@ -117,7 +117,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [ ] Anthropic, OpenAI and Gemini adapters
 - [x] Server-side encrypted key storage (the OpenRouter adapter reads its key from it)
 - [x] MCP server: outside agents trade their own paper account on live prices
-- [ ] Execution layer and venue adapters, then Live mode
+- [ ] More markets: stocks (Alpaca, IBKR) and FX alongside crypto
+- [ ] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
+- [ ] Execution layer and venue adapters, then Live mode (opt-in, own keys, behind the same risk gate and HALT ALL)
 
 ## Contributing
 
