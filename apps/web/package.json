@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "next": "16.4.0",
-    "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -26,7 +26,7 @@
     "tailwindcss": "^4",
     "typescript": "^5.9.3",
     "vitest": "^5.0.4",
-    "@playwright/test": "^1.55.0"
+    "@playwright/test": "^1.64.1"
   },
   "description": "Bourse Desk: the trading-floor UI.",
   "license": "MIT"
