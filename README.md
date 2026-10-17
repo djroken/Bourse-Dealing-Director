@@ -1,13 +1,14 @@
 # Bourse Trading Floor
 
 [![CI](https://github.com/djroken/Bourse-Dealing-Director/actions/workflows/ci.yml/badge.svg)](https://github.com/djroken/Bourse-Dealing-Director/actions/workflows/ci.yml)
+[![Status: work in progress](https://img.shields.io/badge/status-work%20in%20progress-orange.svg)](#what-works-today)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 **An agentic trading desk: a floor of AI agents you watch, instruct and approve.**
 
-> **Early prototype. Paper trading only. Not financial advice.**
-> Bourse cannot place real orders: there is no exchange integration, and Live mode is deliberately switched off.
-> The agents on the desk today are scripted, and the numbers they trade are simulated. See [What works today](#what-works-today).
+> **Work in progress.** Bourse is a live trading desk run by AI agents, with a paper account on the same live market data so you can train and test agents safely before they touch real money. Today only the paper side works: live order routing is not built yet and Live mode is locked. Expect rough edges and breaking changes, and please open an issue if something doesn't work.
+>
+> **Not financial advice.** When live trading arrives it will be off by default, use your own exchange keys, and be entirely at your own risk.
 
 ![The Bourse desk](docs/screenshots/desk-dark.png)
 
@@ -116,7 +117,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [ ] Anthropic, OpenAI and Gemini adapters
 - [x] Server-side encrypted key storage (the OpenRouter adapter reads its key from it)
 - [x] MCP server: outside agents trade their own paper account on live prices
-- [ ] Execution layer and venue adapters, then Live mode
+- [ ] More markets: stocks (Alpaca, IBKR) and FX alongside crypto
+- [ ] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
+- [ ] Execution layer and venue adapters, then Live mode (opt-in, own keys, behind the same risk gate and HALT ALL)
 
 ## Contributing
 
