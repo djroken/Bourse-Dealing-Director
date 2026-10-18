@@ -103,13 +103,14 @@ export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
     approvals: [],
     coreBook: {},
     scores: {},
+    signals: {},
     series: s.series.map(() => walk(26, 1, 0).map(() => 0)),
   };
 }
 
 export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<DeskState> {
-  if (was !== "live") return { core: "offline", scores: {} };
-  return { core: "offline", scores: {}, seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
+  if (was !== "live") return { core: "offline", scores: {}, signals: {} };
+  return { core: "offline", scores: {}, signals: {}, seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
 }
 
 /** Guest agents (connected over MCP) have no seat on the Desk roster; their activity shows in the chat and blotter. */

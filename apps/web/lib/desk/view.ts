@@ -5,10 +5,12 @@ import {
   type Autonomy, type Grp, type Side,
   APP_VERSION, LBL, PERP, POS, RUNTIME_NAMES, SCRIPT, TAPE, TINTS,
 } from "./data";
-import { cm, fmt, fmtQty, hms, money, path, walk } from "./format";
+import { cm, fmt, fmtQty, hms, money, path } from "./format";
 import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
 import { type ResolvedTheme } from "./theme";
 import { CORE_URL } from "./secrets";
+import { chartGeometry, simCandles, type ChartGeo } from "./chartgeo";
+import { TF_MS, TF_TV, TIMEFRAMES, type Timeframe } from "./market";
 
 const UP = "var(--c3ECF8E)";
 const DOWN = "var(--cFF7A7A)";
@@ -36,6 +38,10 @@ export interface ScoreRow {
 }
 /** The selected seat's track record, for the drawer. */
 export interface TrackView { hit: string; hitNote: string; win: string; winNote: string; pnl: string; pnlColor: string; dd: string; ideas: string; fills: string }
+export interface SignalRow {
+  key: string; time: string; who: string; side: "BUY" | "SELL"; sideColor: string; px: string; conf: string;
+  result: string; resultColor: string; why: string; traded: boolean;
+}
 export interface LogRow { key: string; time: string; level: string; text: string; tint: string }
 export interface ApprovalView {
   id: string; side: Side; sym: string; qty: string; agent: string; role: string; tint: string; why: string; age: string;
@@ -77,6 +83,16 @@ export interface DeskView {
   chart: {
     label: string; feedShort: string; last: string; color: string; path: string; area: string;
     tvSrc: string; netPos: string; funding: string; vol: string;
+    tf: Timeframe;
+    tfs: Array<{ id: Timeframe; label: string; active: boolean }>;
+    geo: ChartGeo;
+    /** No exchange answered: the candles are a labelled stand-in. */
+    simulated: boolean;
+    full: boolean;
+    signalsOn: boolean;
+    /** What the SIGNALS layer is showing, or why it's empty. */
+    signalNote: string;
+    signalRows: SignalRow[];
   };
   engineState: string;
   engineColor: string;
@@ -214,7 +230,7 @@ export function buildView(s: DeskState): DeskView {
     { level: "BOOT", text: "bourse desk " + APP_VERSION + " · " + (core ? "core floor" : "simulated floor") + " · " + onFloor.length + " agents · mode " + (isLive ? "LIVE" : "demo / paper only"), tint: "var(--c6B7681)" },
     { level: "RUNTIME", text: core ? "agent runtime → bourse core · scripted momentum agents, not AI models (" + runtimeName + " selected in setup, not connected yet)" : "agent runtime → simulated (" + runtimeName + " selected in setup, not connected yet)", tint: muted },
     { level: "FEED", text: "prices → " + feedName, tint: s.feed === "SIMULATED" ? DOWN : muted },
-    { level: "FEED", text: "charts → " + (s.chartSrc === "tv" ? "tradingview widget " : "native ") + LBL[s.chartSym].tv + " · candles " + (s.kl[s.chartSym] ? "loaded" : "pending"), tint: muted },
+    { level: "FEED", text: "charts → " + (s.chartSrc === "tv" ? "tradingview widget " : "native ") + LBL[s.chartSym].tv + " · candles " + (s.kl[s.chartSym + "|" + s.chartTf] ? "loaded" : "pending"), tint: muted },
     { level: "FEED", text: "fx → frankfurter (ECB daily) " + (s.fx ? "EUR/USD " + s.fx.toFixed(4) : "pending"), tint: muted },
     { level: "ROUTE", text: "execution → " + (isLive ? venueNames : "paper venue · fills at live mid"), tint: isLive ? DOWN : muted },
     { level: "POLICY", text: "risk · daily loss stop $" + setup.lossStop + " · max leverage " + setup.lev + "x · capital " + cm(capital), tint: "var(--cFFB13D)" },
@@ -230,9 +246,26 @@ export function buildView(s: DeskState): DeskView {
   const sessionRaw = onFloor.reduce((x, o) => x + rawPnl(o.i, s.live, s.ref), 0);
   const pnl = core ? onFloor.reduce((x, o) => x + (s.coreBook[o.i]?.pnl ?? 0), 0) : sessionRaw * scale;
 
-  const closes = s.kl[s.chartSym];
-  const series = closes ? closes.slice(0, -1).concat([s.live[s.chartSym].px]) : walk(120, 9931, 0.12);
+  const tf = s.chartTf;
+  const loaded = s.kl[s.chartSym + "|" + tf];
+  const candles = loaded ?? simCandles(s.live[s.chartSym].px, TF_MS[tf], s.now);
+  const series = candles.map((c) => c.c).slice(0, -1).concat([s.live[s.chartSym].px]);
   const chartUp = series[series.length - 1] >= series[0];
+  const symSignals = core ? (s.signals[s.chartSym] ?? []) : [];
+  const dp = LBL[s.chartSym].dp;
+  const geo = chartGeometry(candles, s.live[s.chartSym].px, s.chartSignals ? symSignals : [], TF_MS[tf], dp, s.now);
+  const signalNote = !core
+    ? "Signals come from Bourse Core's agents. Start core (pnpm dev) to see their ideas here."
+    : !symSignals.length
+      ? "No agent ideas on this symbol yet."
+      : `${symSignals.length} agent idea${symSignals.length > 1 ? "s" : ""} · ${geo.visibleSignals} in view · ▲ buy ▼ sell · green right, red wrong, amber not scored yet`;
+  const signalRows: SignalRow[] = symSignals.slice(-40).reverse().map((g) => ({
+    key: g.id, time: hms(g.t), who: g.name, side: g.side, sideColor: g.side === "BUY" ? UP : DOWN, px: fmt(g.px, dp),
+    conf: Math.round(g.confidence * 100) + "%",
+    result: g.outcome ? (g.outcome.returnPct >= 0 ? "+" : "") + g.outcome.returnPct.toFixed(2) + "%" : "open",
+    resultColor: !g.outcome ? ACCENT : g.outcome.correct ? UP : DOWN,
+    why: g.why, traded: g.filled,
+  }));
   const netQ = core
     ? onFloor.reduce((x, o) => x + (s.coreBook[o.i]?.positions.find((q) => q.k === s.chartSym)?.qty ?? 0), 0)
     : onFloor.reduce((x, o) => x + (POS[o.i] && POS[o.i]!.k === s.chartSym ? POS[o.i]!.q * scale : 0), 0);
@@ -240,8 +273,8 @@ export function buildView(s: DeskState): DeskView {
   const light = resolved === "light";
   const tvSrc =
     "https://s.tradingview.com/widgetembed/?frameElementId=bourse_tv&symbol=" + encodeURIComponent(LBL[s.chartSym].tv) +
-    "&interval=5&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=" + (light ? "FFFFFF" : "161A20") +
-    "&studies=%5B%5D&theme=" + (light ? "light" : "dark") + "&style=1&timezone=Etc%2FUTC&withdateranges=0&hideideas=1&locale=en";
+    "&interval=" + TF_TV[tf] + "&hidesidetoolbar=" + (s.chartFull ? "0" : "1") + "&symboledit=0&saveimage=0&toolbarbg=" + (light ? "FFFFFF" : "161A20") +
+    "&studies=%5B%5D&theme=" + (light ? "light" : "dark") + "&style=1&timezone=Etc%2FUTC&withdateranges=" + (s.chartFull ? "1" : "0") + "&hideideas=1&locale=en";
 
   const ago = (t: number) => {
     const sec = Math.max(0, Math.round((s.now - t) / 1000));
@@ -336,6 +369,8 @@ export function buildView(s: DeskState): DeskView {
       netPos: (netQ >= 0 ? "+" : "") + fmtQty(netQ) + " " + s.chartSym.replace("USDT", ""),
       funding: s.funding === null ? "—" : (s.funding >= 0 ? "+" : "") + s.funding.toFixed(4) + "%",
       vol: vol ? cm(vol) : "—",
+      tf, tfs: TIMEFRAMES.map((id) => ({ id, label: id.toUpperCase(), active: id === tf })),
+      geo, simulated: !loaded, full: s.chartFull, signalsOn: s.chartSignals, signalNote, signalRows,
     },
     engineState: s.halted ? "HALTED BY OPERATOR" : core ? "CORE FLOOR" : "SIMULATED FLOOR",
     engineColor: s.halted ? DOWN : ACCENT,

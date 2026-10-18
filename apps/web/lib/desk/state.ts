@@ -3,7 +3,8 @@ import {
   DEFAULT_SETUP, FILL_TPL, POS, SCRIPT, SEED_AGENTS, TAPE, VENUES,
 } from "./data";
 import { walk } from "./format";
-import type { FeedName, Quote } from "./market";
+import type { Candle, FeedName, Quote, Timeframe } from "./market";
+import type { Signal } from "./signals";
 import { DEFAULT_GLASS_ALPHA, type ThemeName } from "./theme";
 
 export type Tab = "chat" | "approvals" | "blotter" | "scores" | "console";
@@ -92,9 +93,17 @@ export interface DeskState {
   onbStep: number;
   chartSrc: "tv" | "native";
   chartSym: string;
+  chartTf: Timeframe;
+  /** The chart fills the window. */
+  chartFull: boolean;
+  /** Show agents' ideas as markers on the native chart. */
+  chartSignals: boolean;
+  /** Agents' ideas from core, by desk symbol. Empty while core isn't connected. */
+  signals: Record<string, Signal[]>;
   live: Record<string, Quote>;
   ref: Record<string, number>;
-  kl: Record<string, number[]>;
+  /** Candles by `${symbol}|${timeframe}`, oldest first. */
+  kl: Record<string, Candle[]>;
   feed: FeedName;
   funding: number | null;
   fx: number | null;
@@ -147,7 +156,7 @@ export function createInitialState(now: number): DeskState {
     centerOpen: true, tab: "chat", mTab: "floor", sel: null, filter: "ALL", draft: "", halted: false,
     setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
     mode: "demo", confirmLive: false, liveNotice: false, setupNotice: false, onbStep: 0,
-    chartSrc: "tv", chartSym: "BTCUSDT",
+    chartSrc: "tv", chartSym: "BTCUSDT", chartTf: "5m", chartFull: false, chartSignals: true, signals: {},
     live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false, core: "connecting", coreBook: {}, scores: {},
     seq, fills: makeFills(live, now),
     approvals: [

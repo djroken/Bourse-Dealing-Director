@@ -731,6 +731,201 @@ a:hover {
   background: var(--w03);
 }
 
+/* Chart: tools, native candles, signal markers, full screen */
+.hz-charttools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hz-chip--tool {
+  height: 22px;
+  padding: 0 8px;
+  font-size: 9px;
+}
+.hz-chip--tool[data-size="lg"] {
+  height: 30px;
+  padding: 0 10px;
+}
+.hz-chip--tool:disabled {
+  opacity: 0.4;
+}
+.hz-x--tool {
+  width: 22px;
+  height: 22px;
+  font-size: 13px;
+  line-height: 1;
+}
+.hz-x--tool[data-size="lg"] {
+  width: 30px;
+  height: 30px;
+}
+.hz-x--tool:hover {
+  border-color: rgba(255, 158, 44, 0.45);
+  color: var(--cFF9E2C);
+}
+.hz-chart-away {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--c5D6873);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+.hz-native {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+.hz-native-plot {
+  position: absolute;
+  inset: 0 52px 0 0;
+}
+.hz-native-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.hz-native-px,
+.hz-native-last {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 9.5px;
+  pointer-events: none;
+}
+.hz-native-px {
+  color: var(--c5D6873);
+}
+.hz-native-last {
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: #0b0d10;
+  font-weight: 600;
+}
+.hz-native-sim {
+  position: absolute;
+  left: 6px;
+  bottom: 4px;
+  color: var(--c5D6873);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+/* Markers sit in the plot area (left of the 52px price axis), so left% is of that area. */
+.hz-mk {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0 2px;
+  border: none;
+  background: transparent;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1;
+  cursor: default;
+  z-index: 2;
+}
+.hz-mk[data-side="BUY"] {
+  transform: translate(-50%, 35%);
+}
+.hz-mk[data-side="SELL"] {
+  transform: translate(-50%, -135%);
+}
+.hz-mk-n {
+  font-size: 8px;
+  opacity: 0.85;
+}
+.hz-mk-tip {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  width: 280px;
+  padding: 9px 10px;
+  border: 1px solid var(--w12);
+  border-radius: 3px;
+  background: var(--c171C22);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  color: var(--cC9D2DA);
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 11.5px;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  z-index: 5;
+}
+.hz-mk-tip[data-edge="left"] {
+  left: 0;
+  transform: none;
+}
+.hz-mk-tip[data-edge="right"] {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+.hz-mk-line {
+  display: block;
+}
+.hz-mk-line + .hz-mk-line {
+  margin-top: 5px;
+  padding-top: 5px;
+  border-top: 1px solid var(--w07);
+}
+.hz-mk:hover .hz-mk-tip,
+.hz-mk:focus-visible .hz-mk-tip {
+  display: block;
+}
+.hz-mk:hover,
+.hz-mk:focus-visible {
+  z-index: 6;
+}
+.hz-chartfull {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  background: var(--c0F1216);
+}
+.hz-chartfull-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--w07);
+  background: var(--c161A20);
+  overflow-x: auto;
+}
+.hz-chartfull-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+.hz-sigs {
+  flex: none;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--w07);
+  background: var(--c161A20);
+}
+.hz-sig {
+  padding: 10px 14px;
+  border-top: 1px solid var(--w05);
+}
+
 /* Scorecards */
 .hz-score-row {
   display: grid;

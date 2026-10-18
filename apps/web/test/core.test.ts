@@ -171,7 +171,7 @@ describe("connection lifecycle", () => {
     const lost = onCoreLost(live, 9, "live");
     expect(lost.core).toBe("offline");
     expect(lost.seq!.at(-1)!.sysText).toMatch(/Lost connection/);
-    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {} }); // never connected: say nothing
+    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {}, signals: {} }); // never connected: say nothing
   });
 });
 

@@ -23,6 +23,7 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | | Status | Notes |
 |---|---|---|
 | Desk UI: roster, floor chat, blotter, console, chart rail, agent drawer | **Working** | Dark, light, system and glass themes; responsive down to phones |
+| Chart | **Working** | TradingView or native candles, 1m to 1D, full screen (Esc to close). With core running, the native chart shows the agents' ideas as ▲/▼ markers, coloured by whether they turned out right, with the full list beside it in full screen |
 | Approvals queue | **Working** | SUGGEST and APPROVE agents send trades to the queue; AUTO agents fill immediately (paper) |
 | Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets stay in memory unless you save them to core's encrypted store |
 | Encrypted key store (core) | **Working; the OpenRouter adapter reads from it** | AES-256-GCM at rest, write-only over HTTP. Needs `BOURSE_MASTER_KEY` |

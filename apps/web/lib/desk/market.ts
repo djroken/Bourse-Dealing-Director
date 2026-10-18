@@ -70,23 +70,68 @@ export async function fetchQuotes(): Promise<{ quotes: Record<string, Quote>; fe
   }
 }
 
-/** 5-minute closes, newest last. */
-export async function fetchCloses(sym: string): Promise<number[] | null> {
+export interface Candle {
+  /** Open time, ms epoch. */
+  t: number;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+}
+
+export type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+export const TIMEFRAMES: Timeframe[] = ["1m", "5m", "15m", "1h", "4h", "1d"];
+export const TF_MS: Record<Timeframe, number> = { "1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000, "1d": 86_400_000 };
+/** TradingView widget interval for each timeframe. */
+export const TF_TV: Record<Timeframe, string> = { "1m": "1", "5m": "5", "15m": "15", "1h": "60", "4h": "240", "1d": "D" };
+/** Coinbase has no 4h granularity: fetch 1h and merge each 4 into one. */
+const CB_GRAN: Record<Timeframe, [number, number]> = { "1m": [60, 1], "5m": [300, 1], "15m": [900, 1], "1h": [3600, 1], "4h": [3600, 4], "1d": [86400, 1] };
+
+const okCandle = (c: Candle) => [c.t, c.o, c.h, c.l, c.c].every(Number.isFinite) && c.o > 0 && c.c > 0 && c.h >= c.l;
+
+/** Merge consecutive candles n at a time, aligned to the bigger bucket's boundary. */
+export function mergeCandles(cs: Candle[], n: number, bucketMs: number): Candle[] {
+  if (n <= 1) return cs;
+  const out: Candle[] = [];
+  for (const c of cs) {
+    const t = Math.floor(c.t / bucketMs) * bucketMs;
+    const last = out[out.length - 1];
+    if (last && last.t === t) {
+      last.h = Math.max(last.h, c.h);
+      last.l = Math.min(last.l, c.l);
+      last.c = c.c;
+    } else out.push({ t, o: c.o, h: c.h, l: c.l, c: c.c });
+  }
+  return out;
+}
+
+/** Up to 120 candles, oldest first. Binance, then Coinbase. Null when neither answers. */
+export async function fetchCandles(sym: string, tf: Timeframe = "5m"): Promise<Candle[] | null> {
   try {
-    const j = await getJSON<Array<Array<string | number>>>(BINANCE + "/klines?symbol=" + sym + "&interval=5m&limit=120");
-    return j.map((c) => +c[4]);
+    const j = await getJSON<Array<Array<string | number>>>(BINANCE + "/klines?symbol=" + sym + "&interval=" + tf + "&limit=120");
+    const cs = j.map((k) => ({ t: +k[0], o: +k[1], h: +k[2], l: +k[3], c: +k[4] })).filter(okCandle);
+    if (!cs.length) throw new Error("no candles");
+    return cs;
   } catch {
     try {
       const cb = LBL[sym]?.cb;
       if (!cb) return null;
-      const j = await getJSON<Array<Array<number>>>(
-        "https://api.exchange.coinbase.com/products/" + cb + "/candles?granularity=300",
-      );
-      return j.slice(0, 120).reverse().map((c) => +c[4]);
+      const [gran, n] = CB_GRAN[tf];
+      // Coinbase rows: [time (s), low, high, open, close, volume], newest first.
+      const j = await getJSON<Array<Array<number>>>("https://api.exchange.coinbase.com/products/" + cb + "/candles?granularity=" + gran);
+      const cs = j.map((k) => ({ t: +k[0] * 1000, o: +k[3], h: +k[2], l: +k[1], c: +k[4] })).filter(okCandle).reverse();
+      const merged = mergeCandles(cs, n, TF_MS[tf]).slice(-120);
+      return merged.length ? merged : null;
     } catch {
       return null;
     }
   }
+}
+
+/** Closes only, for callers that just want a line. */
+export async function fetchCloses(sym: string, tf: Timeframe = "5m"): Promise<number[] | null> {
+  const cs = await fetchCandles(sym, tf);
+  return cs ? cs.map((c) => c.c) : null;
 }
 
 /** Funding expressed as the 8h rate in percent, which is what the UI labels it as. */

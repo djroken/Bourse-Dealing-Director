@@ -216,6 +216,12 @@ describe('server: scorecards, export and the idea log', () => {
       expect(lines[0]).toMatchObject({ symbol: 'BTC-USDT', price: 100, outcome: null });
       expect(await (await fetch(`${base}/export/ideas.jsonl?scored=1`)).text()).toBe('');
 
+      const forChart = (await (await fetch(`${base}/ideas?symbol=BTC-USDT&limit=2`)).json()) as IdeaRecord[];
+      expect(forChart.length).toBeLessThanOrEqual(2);
+      expect(forChart.every((r) => r.symbol === 'BTC-USDT')).toBe(true);
+      expect((await fetch(`${base}/ideas?symbol=DOGE-USDT`)).status).toBe(400);
+      expect(Array.isArray(await (await fetch(`${base}/ideas`)).json())).toBe(true);
+
       await new Promise((r) => setTimeout(r, 80));
       core.engine.pushTick('BTC-USDT', { price: 103, change24h: 0, source: 'binance' });
       await core.stop(); // flushes the queued writes
