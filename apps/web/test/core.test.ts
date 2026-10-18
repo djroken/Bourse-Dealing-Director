@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from "../../../packages/shared/src";
+import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, AgentScorecardSchema, defaultAgents } from "../../../packages/shared/src";
 import { SEED_AGENTS } from "../lib/desk/data";
 import { applyCoreMsg, coreFloorUrl, deskSym, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "../lib/desk/core";
 import { createInitialState, tickState, type DeskState } from "../lib/desk/state";
@@ -171,7 +171,7 @@ describe("connection lifecycle", () => {
     const lost = onCoreLost(live, 9, "live");
     expect(lost.core).toBe("offline");
     expect(lost.seq!.at(-1)!.sysText).toMatch(/Lost connection/);
-    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline" }); // never connected: say nothing
+    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {} }); // never connected: say nothing
   });
 });
 
@@ -218,5 +218,50 @@ describe("guest agents (MCP)", () => {
       { type: "pnl", agentId: "GST-001", role: "Guest: Claude Bot", pnl: 5, exposure: 100, positions: [], ts: 1 },
       { type: "lifecycle", agentId: "GST-001", role: "Guest: Claude Bot", status: "running", ts: 1 },
     ]) expect(applyCoreMsg(s, parseCoreMsg(m)!)).toBeNull();
+  });
+});
+
+describe("scorecards", () => {
+  const card = (name: string, over: Record<string, unknown> = {}) => ({
+    type: "scorecard", agentId: "TKT-004", role: roleOf(name), name: defaultAgents.find((a) => a.name.startsWith(name))!.name, model: "ollama:llama3.2",
+    ideas: 12, holds: 3, scored: 10, hits: 6, hitRate: 0.6, avgReturnPct: 0.42, fills: 4, vetoes: 1, notional: 9000,
+    closes: 2, wins: 1, winRate: 0.5, realized: 40, pnl: 55.5, peakPnl: 80, maxDrawdown: 31, updatedAt: 5, ts: 6, ...over,
+  });
+  it("matches the shared schema; malformed ones are rejected", () => {
+    expect(AgentScorecardSchema.safeParse(card("Pico")).success).toBe(true);
+    expect(parseCoreMsg(card("Pico"))).toMatchObject({ type: "scorecard", hitRate: 0.6, pnl: 55.5 });
+    expect(parseCoreMsg(card("Pico", { hitRate: null, winRate: null, avgReturnPct: null }))).toMatchObject({ hitRate: null });
+    for (const bad of [card("Pico", { hitRate: 1.5 }), card("Pico", { ideas: -1 }), card("Pico", { maxDrawdown: -3 }), card("Pico", { pnl: Number.NaN }), card("Pico", { winRate: "50%" }), card("Pico", { name: 7 })])
+      expect(parseCoreMsg(bad)).toBeNull();
+  });
+  it("is stored by core agent id (guests too), and the SCORES tab lists seats in roster order then guests", () => {
+    let s: DeskState = { ...base(), core: "live" };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(card("Pico", { agentId: "TKT-006" }))!)! };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(card("Pico", { agentId: "GST-001", role: "Guest: Claude Bot", name: "Claude Bot", model: "external agent (MCP)" }))!)! };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(card("Atlas", { agentId: "TKT-002", hitRate: 0.3, pnl: -12, scored: 10 }))!)! };
+    expect(Object.keys(s.scores)).toHaveLength(3);
+    const v = buildView({ ...s, tab: "scores" });
+    expect(v.tabs.map((t) => t.label)).toContain("SCORES");
+    expect(v.scores.map((r) => r.name)).toEqual([s.agents[seat("Atlas")]!.name, s.agents[seat("Pico")]!.name, "Claude Bot"]);
+    const atlas = v.scores[0]!;
+    expect(atlas).toMatchObject({ hit: "30% of 10", pnl: "-$12", dd: "-$31", win: "50% of 2" });
+    expect(v.scores[2]).toMatchObject({ guest: true, sub: "GUEST · MCP" });
+    expect(v.exportUrl).toMatch(/\/export\/ideas\.jsonl$/);
+  });
+  it("the drawer shows the selected seat's track record only while core is connected", () => {
+    let s: DeskState = { ...base(), core: "live", sel: seat("Pico") };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(card("Pico"))!)! };
+    expect(buildView(s).sel!.track).toMatchObject({ hit: "60%", hitNote: "6 of 10 ideas", win: "50%", pnl: "+$56", dd: "-$31", ideas: "12", fills: "4" });
+    expect(buildView({ ...s, core: "offline" }).sel!.track).toBeNull();
+    expect(buildView({ ...s, core: "offline" }).scores).toEqual([]);
+  });
+  it("connecting and losing core both clear the scores", () => {
+    const s: DeskState = { ...base(), core: "live", scores: { X: { agentId: "X" } as DeskState["scores"][string] } };
+    expect(onCoreConnected(s, 1).scores).toEqual({});
+    expect(onCoreLost(s, 1, "live").scores).toEqual({});
+  });
+  it("a long model id (up to core's 96 characters) still updates the seat", () => {
+    const id = "openrouter:" + "v".repeat(85);
+    expect(parseCoreMsg(config("Pico", { model: id }))).toMatchObject({ model: id });
   });
 });

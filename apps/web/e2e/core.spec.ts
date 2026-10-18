@@ -178,3 +178,38 @@ test("a guest agent's trade and chat show up on the desk, labelled as a guest", 
   await page.locator(".hz-tab", { hasText: "BLOTTER" }).click();
   await expect(page.locator(".hz-blotter-body").filter({ hasText: "Claude Bot (guest)" }).first()).toContainText("96,000");
 });
+
+test("scorecards from core show in the SCORES tab and the agent drawer", async ({ page }) => {
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  const card = (over: Record<string, unknown>) => ({
+    type: "scorecard", agentId: "TKT-002", role: "Execution Trader", name: "Atlas Reyner", model: "claude-sonnet-4-5",
+    ideas: 9, holds: 1, scored: 8, hits: 5, hitRate: 0.625, avgReturnPct: 0.31, fills: 6, vetoes: 2, notional: 12000,
+    closes: 3, wins: 2, winRate: 2 / 3, realized: 40, pnl: 212.4, peakPnl: 260, maxDrawdown: 48, updatedAt: Date.now(), ts: Date.now(), ...over,
+  });
+  core.send(card({}));
+  core.send(card({ agentId: "GST-001", role: "Guest: Claude Bot", name: "Claude Bot", model: "external agent (MCP)", hitRate: null, scored: 0, pnl: 0, fills: 0, maxDrawdown: 0 }));
+
+  await page.locator(".hz-tab", { hasText: "SCORES" }).click();
+  const rows = page.getByTestId("score-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(0)).toContainText("Atlas Reyner");
+  await expect(rows.nth(0)).toContainText("63% of 8");
+  await expect(rows.nth(0)).toContainText("+$212");
+  await expect(rows.nth(1)).toContainText("GUEST · MCP");
+  await expect(page.getByRole("link", { name: "EXPORT IDEAS" })).toHaveAttribute("href", /\/export\/ideas\.jsonl$/);
+
+  await page.locator(".hz-agent", { hasText: "Atlas Reyner" }).click();
+  const drawer = page.getByRole("dialog", { name: /Atlas Reyner settings/ });
+  await expect(drawer).toContainText("TRACK RECORD · PAPER");
+  await expect(drawer).toContainText("5 of 8 ideas");
+  await expect(drawer).toContainText("-$48");
+});
+
+test("without core the SCORES tab explains where the numbers come from", async ({ page }) => {
+  await openDesk(page);
+  await page.locator(".hz-tab", { hasText: "SCORES" }).click();
+  await expect(page.locator(".hz-centre")).toContainText("Scorecards come from Bourse Core");
+  await expect(page.getByTestId("score-row")).toHaveCount(0);
+});

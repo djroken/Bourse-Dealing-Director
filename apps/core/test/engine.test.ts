@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, defaultAgents } from 'shared';
+import { AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, AgentScorecardSchema, defaultAgents } from 'shared';
 import { InboundSchema, createEngine, momentumIntent, type FloorSocket } from '../src/engine';
 
 class FakeSocket implements FloorSocket {
@@ -230,7 +230,7 @@ describe('contract with packages/shared', () => {
     engine.pushTick('SOL-USDT', tick(2));
     engine.haltAll();
     engine.resumeAll();
-    const schemas = { lifecycle: AgentLifecycleSchema, intent: AgentIntentSchema, decision: AgentDecisionSchema, pnl: AgentPnlSchema, config: AgentConfigMsgSchema } as const;
+    const schemas = { lifecycle: AgentLifecycleSchema, intent: AgentIntentSchema, decision: AgentDecisionSchema, pnl: AgentPnlSchema, config: AgentConfigMsgSchema, scorecard: AgentScorecardSchema } as const;
     expect(ws.sent.length).toBeGreaterThan(30);
     for (const m of ws.sent) {
       const schema = schemas[m.type as keyof typeof schemas];

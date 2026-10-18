@@ -3,6 +3,7 @@ import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
 import type { Advisor } from './models';
+import { createScorebook, type IdeaRecord, type Scorecard } from './scorecard';
 import { clampClip, withinLossStop } from './risk';
 
 /** The slice of a WebSocket the engine needs, so tests can use a plain fake. */
@@ -80,7 +81,14 @@ export interface EngineOptions {
   /** Asks real models for a view. Without one, every seat runs the stub rule. */
   advisor?: Advisor;
   log?: Logger;
+  /** How long after an idea its outcome is scored. Default 15 minutes. */
+  scoreHorizonMs?: number;
+  /** Called once per idea when its outcome is known (the server appends these to a training log). */
+  onIdeaResolved?: (rec: IdeaRecord) => void;
 }
+
+/** Scorecards go out at most this often per seat, so a busy tick doesn't flood clients. */
+const SCORECARD_EVERY_MS = 2_000;
 
 /** Stub strategy: 24h momentum. Stands in for a model call; it is not trading advice and is not meant to make money. */
 /** Core, not the model, decides the size: a fraction of the clip scaled by confidence, in asset units rounded down. */
@@ -117,6 +125,15 @@ export function createEngine(opts: EngineOptions = {}) {
     dailyPnL: 0,
     book: newBook(),
   }));
+  const scores = createScorebook({ now, horizonMs: opts.scoreHorizonMs, onResolved: opts.onIdeaResolved });
+  const ident = (a: FloorAgent) => ({ agentId: a.id, role: a.config.role, name: a.config.name, model: a.config.model });
+  /** What was last broadcast per seat. Seeded at creation: clients get every card on connect, so only changes go out after that. */
+  const scoreSent = new Map<string, { at: number; stamp: number }>();
+  const seedScore = (a: FloorAgent) => {
+    scores.ensure(ident(a));
+    scoreSent.set(a.id, { at: Number.NEGATIVE_INFINITY, stamp: scores.rev(a.id) });
+  };
+  for (const a of agents) seedScore(a);
   const lastPx = new Map<string, number>();
   const lastTick = new Map<string, Tick & { ts: number }>();
   const recent: FloorMsg[] = [];
@@ -182,6 +199,27 @@ export function createEngine(opts: EngineOptions = {}) {
     type: 'lifecycle', agentId: '*', role: 'floor', status, ts: now(),
   });
 
+  /** Every intent goes through here so the scorebook sees it with the market context it was made in. */
+  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string): void => {
+    if (side === 'HOLD') scores.hold(ident(agent));
+    else {
+      scores.idea({
+        ...ident(agent), temperature: agent.config.temperature, autonomy: agent.config.autonomy, symbol, side, size, confidence, rationale,
+        price: tick.price, change24h: tick.change24h, source: tick.source,
+      });
+    }
+    broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence, rationale, ts: now() });
+  };
+
+  /** Every paper fill goes through here so the scorebook can count closes and wins. */
+  const fillBook = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number, price: number): void => {
+    const before = agent.book.realized;
+    applyFill(agent.book, symbol, side, size, price);
+    scores.fill(ident(agent), symbol, side, size, price, agent.book.realized - before);
+  };
+
+  const scorecardMsg = (c: Scorecard): FloorMsg => ({ type: 'scorecard', ...c, ts: now() });
+
   const evaluate = (agent: FloorAgent, symbol: string, tick: Tick): void => {
     if (agent.external || agent.state !== 'running' || !agent.config.trades) return;
     const key = `${agent.id}:${symbol}`;
@@ -204,11 +242,11 @@ export function createEngine(opts: EngineOptions = {}) {
           const clip = agent.config.riskLimits.maxClip;
           if (res.ok) {
             const it = sizeIntent(res.view.side, res.view.confidence, clip, tick.price);
-            broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side: it.side, size: it.size, confidence: it.confidence, rationale: `${modelId}: ${res.view.rationale}`, ts: now() });
+            emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, `${modelId}: ${res.view.rationale}`);
           } else {
             log.warn(`model ${modelId} unavailable for ${agent.config.role}: ${res.reason}`);
             const m = momentumIntent(tick.change24h, clip, tick.price);
-            broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side: m.side, size: m.size, confidence: m.confidence, rationale: `${modelId} unavailable (${res.reason}); stub momentum rule instead`, ts: now() });
+            emitIntent(agent, symbol, tick, m.side, m.size, m.confidence, `${modelId} unavailable (${res.reason}); stub momentum rule instead`);
           }
         });
       return;
@@ -216,16 +254,13 @@ export function createEngine(opts: EngineOptions = {}) {
 
     const { side, size, confidence } = momentumIntent(tick.change24h, agent.config.riskLimits.maxClip, tick.price);
     const change = tick.change24h ?? 0;
-    broadcast({
-      type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence,
-      rationale: `${agent.config.role} read ${tick.source}: ${change.toFixed(2)}% over 24h (stub momentum rule)`,
-      ts: now(),
-    });
+    emitIntent(agent, symbol, tick, side, size, confidence, `${agent.config.role} read ${tick.source}: ${change.toFixed(2)}% over 24h (stub momentum rule)`);
 
     // SUGGEST and APPROVE agents stop at the intent: a human (or the approvals queue) decides.
     if (agent.config.autonomy !== 'AUTO' || side === 'HOLD') return;
     const ok = withinLossStop(agent.dailyPnL, agent.config.riskLimits.dailyLossStop);
-    if (ok) applyFill(agent.book, symbol, side, size, tick.price);
+    if (ok) fillBook(agent, symbol, side, size, tick.price);
+    else scores.veto(ident(agent));
     broadcast({
       type: 'decision', agentId: agent.id, role: agent.config.role, symbol,
       action: ok ? side : 'HOLD',
@@ -244,6 +279,7 @@ export function createEngine(opts: EngineOptions = {}) {
   const submitOrder = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number, note: string): OrderResult => {
     const price = lastPx.get(symbol);
     const veto = (why: string): OrderResult => {
+      scores.veto(ident(agent));
       broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: 'HOLD', size: 0, price: price ?? 1, rationale: why, riskChecked: false, ts: now() });
       return { ok: false, reason: why };
     };
@@ -261,7 +297,7 @@ export function createEngine(opts: EngineOptions = {}) {
       const post = cur - Math.abs(oldQty) * price + Math.abs(oldQty + (side === 'BUY' ? size : -size)) * price;
       if (post > cur && post > cap) return veto(`Would take exposure over $${cap} (${maxLeverage}x the $${PAPER_CAPITAL} paper book): not placed`);
     }
-    applyFill(agent.book, symbol, side, size, price);
+    fillBook(agent, symbol, side, size, price);
     broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: side, size, price, rationale: `${note} · within risk limits`, riskChecked: true, ts: now() });
     const p = pnlMsg(agent);
     broadcast(p);
@@ -294,6 +330,7 @@ export function createEngine(opts: EngineOptions = {}) {
       },
     };
     agents.push(guest);
+    seedScore(guest);
     broadcast(lifecycle(guest));
     broadcast(configMsg(guest));
     log.info(`guest agent joined: ${name}`);
@@ -317,6 +354,7 @@ export function createEngine(opts: EngineOptions = {}) {
   const pnlMsg = (a: FloorAgent): FloorMsg => {
     const v = mark(a.book, lastPx);
     a.dailyPnL = v.pnl;
+    scores.mark(ident(a), v.pnl);
     return { type: 'pnl', agentId: a.id, role: a.config.role, pnl: v.pnl, exposure: v.exposure, positions: v.positions, ts: now() };
   };
   const hasBook = (a: FloorAgent) => a.book.positions.size > 0 || a.book.realized !== 0;
@@ -350,9 +388,25 @@ export function createEngine(opts: EngineOptions = {}) {
       if (!TRADED_SYMBOLS.includes(symbol)) return;
       lastPx.set(symbol, tick.price);
       lastTick.set(symbol, { ...tick, ts: now() });
+      scores.tick(symbol, tick.price);
       for (const a of agents) evaluate(a, symbol, tick);
       for (const a of agents) if (hasBook(a)) broadcast(pnlMsg(a));
+      // Scorecards that changed since they were last sent, at most once per SCORECARD_EVERY_MS per seat.
+      const t = now();
+      for (const c of scores.cards()) {
+        const sent = scoreSent.get(c.agentId);
+        const rev = scores.rev(c.agentId);
+        if (sent && (sent.stamp === rev || t - sent.at < SCORECARD_EVERY_MS)) continue;
+        scoreSent.set(c.agentId, { at: t, stamp: rev });
+        broadcast(scorecardMsg(c));
+      }
     },
+
+    /** Every seat's track record, and every idea this session with its outcome once known. */
+    scorecards: (): Scorecard[] => scores.cards(),
+    ideas: (): IdeaRecord[] => scores.ideas(),
+    scorecardOf: (id: string): Scorecard | undefined => scores.cardOf(id),
+    scoreHorizonMs: scores.horizonMs,
 
     haltAll,
     resumeAll,
@@ -412,6 +466,7 @@ export function createEngine(opts: EngineOptions = {}) {
       for (const a of agents) ws.send(JSON.stringify(lifecycle(a)));
       for (const a of agents) ws.send(JSON.stringify(configMsg(a)));
       for (const a of agents) if (hasBook(a)) ws.send(JSON.stringify(pnlMsg(a)));
+      for (const c of scores.cards()) ws.send(JSON.stringify(scorecardMsg(c)));
       log.info(`floor client connected (${clients.size})`);
 
       ws.on('message', (raw) => {

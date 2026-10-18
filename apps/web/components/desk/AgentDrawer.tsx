@@ -59,6 +59,24 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
           </div>
         </div>
 
+        {sel.track && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }} aria-label="Track record">
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <Label>TRACK RECORD · PAPER</Label>
+              <span style={m(9, "0.08em", "var(--c5D6873)")}>{sel.track.ideas} IDEAS · {sel.track.fills} FILLS</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {([["HIT RATE", sel.track.hit, sel.track.hitNote, undefined], ["WIN RATE", sel.track.win, sel.track.winNote, undefined], ["P&L", sel.track.pnl, "realised + open", sel.track.pnlColor], ["MAX DRAWDOWN", sel.track.dd, "from peak", "var(--cFF7A7A)"]] as const).map(([label, value, note, color]) => (
+                <div key={label} style={{ border: "1px solid var(--w07)", borderRadius: 3, padding: "8px 10px" }}>
+                  <div style={m(8.5, "0.14em", "var(--c5D6873)")}>{label}</div>
+                  <div style={m(13, undefined, color, { marginTop: 3 })}>{value}</div>
+                  <div style={m(8.5, "0.04em", "var(--c5D6873)", { marginTop: 2 })}>{note}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <Label>REASONING TEMPERATURE</Label>

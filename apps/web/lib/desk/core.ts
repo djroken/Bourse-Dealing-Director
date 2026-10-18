@@ -1,7 +1,7 @@
 import { CORE_URL } from "./secrets";
 import { LBL, PERP, type Autonomy, type Side } from "./data";
 import { cm, fmt, fmtQty } from "./format";
-import type { Approval, DeskState, Fill, SeqEvent } from "./state";
+import type { Approval, DeskState, Fill, Score, SeqEvent } from "./state";
 import { walk } from "./format";
 
 /**
@@ -17,7 +17,8 @@ export type CoreMsg =
   | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
   | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
-  | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number };
+  | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number }
+  | ({ type: "scorecard"; ts: number } & Score);
 
 export const coreFloorUrl = (base: string = CORE_URL): string => base.replace(/^http/, "ws").replace(/\/$/, "") + "/agents";
 
@@ -40,12 +41,25 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
   if (raw.type === "config") {
     const rl = raw.riskLimits;
     const a = raw.autonomy;
-    if (!str(raw.name, 64) || !str(raw.model, 64) || !num(raw.temperature) || !str(raw.mandate, 2000) || typeof raw.paused !== "boolean") return null;
+    if (!str(raw.name, 64) || !str(raw.model, 96) || !num(raw.temperature) || !str(raw.mandate, 2000) || typeof raw.paused !== "boolean") return null;
     if (a !== "SUGGEST" && a !== "APPROVE" && a !== "AUTO") return null;
     if (!isObj(rl) || !num(rl.maxClip) || !num(rl.maxLeverage) || !num(rl.dailyLossStop)) return null;
     return {
       type: "config", agentId, role, name: raw.name, model: raw.model, temperature: raw.temperature, autonomy: a, mandate: raw.mandate,
       paused: raw.paused, riskLimits: { maxClip: rl.maxClip, maxLeverage: rl.maxLeverage, dailyLossStop: rl.dailyLossStop }, ts,
+    };
+  }
+  if (raw.type === "scorecard") {
+    const counts = ["ideas", "scored", "hits", "fills", "vetoes", "closes", "wins"] as const;
+    if (!str(raw.name, 64) || !str(raw.model, 96) || !num(raw.pnl) || !num(raw.maxDrawdown) || raw.maxDrawdown < 0) return null;
+    for (const k of counts) if (!num(raw[k]) || (raw[k] as number) < 0) return null;
+    const rate = (v: unknown): v is number | null => v === null || (num(v) && v >= 0 && v <= 1);
+    if (!rate(raw.hitRate) || !rate(raw.winRate) || !(raw.avgReturnPct === null || num(raw.avgReturnPct))) return null;
+    return {
+      type: "scorecard", agentId, role, ts, name: raw.name, model: raw.model,
+      ideas: raw.ideas as number, scored: raw.scored as number, hits: raw.hits as number, hitRate: raw.hitRate, avgReturnPct: raw.avgReturnPct as number | null,
+      fills: raw.fills as number, vetoes: raw.vetoes as number, closes: raw.closes as number, wins: raw.wins as number, winRate: raw.winRate,
+      pnl: raw.pnl, maxDrawdown: raw.maxDrawdown,
     };
   }
   if (raw.type === "pnl") {
@@ -88,13 +102,14 @@ export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
     fills: [],
     approvals: [],
     coreBook: {},
+    scores: {},
     series: s.series.map(() => walk(26, 1, 0).map(() => 0)),
   };
 }
 
 export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<DeskState> {
-  if (was !== "live") return { core: "offline" };
-  return { core: "offline", seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
+  if (was !== "live") return { core: "offline", scores: {} };
+  return { core: "offline", scores: {}, seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
 }
 
 /** Guest agents (connected over MCP) have no seat on the Desk roster; their activity shows in the chat and blotter. */
@@ -102,6 +117,15 @@ const isGuest = (role: string): boolean => /^guest:/i.test(role.trim());
 const guestName = (role: string): string => role.replace(/^guest:\s*/i, "").trim() || "Guest";
 
 export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | null {
+  if (m.type === "scorecard") {
+    const score: Score = {
+      agentId: m.agentId, role: m.role, name: m.name, model: m.model, ideas: m.ideas, scored: m.scored, hits: m.hits, hitRate: m.hitRate,
+      avgReturnPct: m.avgReturnPct, fills: m.fills, vetoes: m.vetoes, closes: m.closes, wins: m.wins, winRate: m.winRate, pnl: m.pnl, maxDrawdown: m.maxDrawdown,
+    };
+    // Bounded: 8 seats + at most 8 guests in practice; never let a misbehaving core grow this without limit.
+    if (!(m.agentId in s.scores) && Object.keys(s.scores).length >= 32) return null;
+    return { scores: { ...s.scores, [m.agentId]: score } };
+  }
   if (isGuest(m.role)) {
     const name = guestName(m.role);
     if (m.type === "chat") return { seq: push(s.seq, { sysText: `GUEST ${name}: ${m.text}`, t: m.ts }) };

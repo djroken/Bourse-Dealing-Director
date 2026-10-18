@@ -1,4 +1,5 @@
 import Fastify, { type FastifyInstance } from 'fastify';
+import { appendFile, mkdir } from 'node:fs/promises';
 import type { IncomingMessage } from 'node:http';
 import { join } from 'node:path';
 import type { Duplex } from 'node:stream';
@@ -8,6 +9,7 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { MCP_AGENT_HEADER, createMcpServer, tokenOk } from './mcp';
 import { createAdvisor } from './models';
 import { createEngine, type Engine, type Logger } from './engine';
+import type { IdeaRecord } from './scorecard';
 import { fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
@@ -39,7 +41,17 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     // Read at call time: a key saved in Setup works without a restart. The env var is the fallback.
     openrouterKey: () => secrets?.get('model.openrouter.key') ?? (process.env.OPENROUTER_API_KEY?.trim() || undefined),
   });
-  const engine = deps.engine ?? createEngine({ log, advisor });
+  // Training/eval log: one JSON line per idea once its outcome is known. Writes are queued so lines never interleave.
+  const ideaFile = join(config.dataDir, 'ideas.jsonl');
+  let ideaWrites: Promise<void> = Promise.resolve();
+  const logIdea = (rec: IdeaRecord): void => {
+    if (config.ideaLog === false) return;
+    ideaWrites = ideaWrites
+      .then(() => mkdir(config.dataDir, { recursive: true, mode: 0o700 }))
+      .then(() => appendFile(ideaFile, JSON.stringify(rec) + '\n', { mode: 0o600 }))
+      .catch((err: unknown) => server.log.warn(`could not write ${ideaFile}: ${err instanceof Error ? err.message : String(err)}`));
+  };
+  const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea });
   const feedDeps: FeedDeps = deps.feedDeps ?? { fetchJson: (url, init) => fetchJson(url, { init }), now: Date.now };
 
   const originAllowed = (origin: string | undefined): boolean =>
@@ -115,6 +127,18 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.all('/mcp', mcpHandler);
 
   server.get('/models', async () => advisor.status());
+
+  // ---- scorecards and the idea log ---------------------------------------------------------------------------------
+  server.get('/scorecards', async () => ({ horizonMs: engine.scoreHorizonMs, scorecards: engine.scorecards() }));
+  /** This session's ideas as JSON Lines, one per idea, outcome null until it is scored. For evaluation or fine-tuning. */
+  server.get<{ Querystring: { scored?: string } }>('/export/ideas.jsonl', async (req, reply) => {
+    const onlyScored = req.query.scored === '1' || req.query.scored === 'true';
+    const rows = engine.ideas().filter((r) => !onlyScored || r.outcome);
+    return reply
+      .header('Content-Type', 'application/x-ndjson; charset=utf-8')
+      .header('Content-Disposition', 'attachment; filename="bourse-ideas.jsonl"')
+      .send(rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
+  });
   server.get('/secrets', async () => ({ enabled: !!secrets, secrets: secrets?.list() ?? [] }));
   server.put<{ Params: { id: string }; Body: { value?: unknown } }>('/secrets/:id', async (req, reply) => {
     if (!secrets) return reply.code(503).send(disabled);
@@ -222,6 +246,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     },
     async stop(): Promise<void> {
       stopped = true;
+      await ideaWrites;
       if (timer) clearTimeout(timer);
       clearInterval(sweep);
       for (const wss of [agentsWss, feedWss]) for (const ws of wss.clients) ws.terminate();

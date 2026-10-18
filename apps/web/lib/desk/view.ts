@@ -8,6 +8,7 @@ import {
 import { cm, fmt, fmtQty, hms, money, path, walk } from "./format";
 import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
 import { type ResolvedTheme } from "./theme";
+import { CORE_URL } from "./secrets";
 
 const UP = "var(--c3ECF8E)";
 const DOWN = "var(--cFF7A7A)";
@@ -28,6 +29,13 @@ export interface FillRow {
   key: string; time: string; side: Side; sym: string; qty: string; px: string; pnl: string; agent: string;
   status: string; sideColor: string; pnlColor: string; stColor: string;
 }
+export interface ScoreRow {
+  key: string; name: string; sub: string; model: string; guest: boolean; tint: string;
+  ideas: string; hit: string; hitColor: string; avg: string; avgColor: string; fills: string; win: string;
+  pnl: string; pnlColor: string; dd: string; vetoes: string;
+}
+/** The selected seat's track record, for the drawer. */
+export interface TrackView { hit: string; hitNote: string; win: string; winNote: string; pnl: string; pnlColor: string; dd: string; ideas: string; fills: string }
 export interface LogRow { key: string; time: string; level: string; text: string; tint: string }
 export interface ApprovalView {
   id: string; side: Side; sym: string; qty: string; agent: string; role: string; tint: string; why: string; age: string;
@@ -37,6 +45,8 @@ export interface SelView {
   idx: number; name: string; role: string; model: string; mandate: string; initials: string; tint: string;
   temp: number; tokens: string; spend: string; latency: string; maxClip: string; leverage: string; lossStop: string;
   autonomy: Autonomy; paused: boolean; tools: string[];
+  /** Null while core isn't connected: there is no real record to show. */
+  track: TrackView | null;
 }
 
 export interface DeskView {
@@ -54,6 +64,10 @@ export interface DeskView {
   approvals: ApprovalView[];
   nAppr: number;
   tabs: Array<{ id: Tab; label: string; active: boolean }>;
+  scores: ScoreRow[];
+  /** Explains the scores tab: what the numbers mean, or why there are none. */
+  scoresNote: string;
+  exportUrl: string;
   centerMeta: string;
   /** The honesty strip above the floor chat. */
   strip: string;
@@ -79,7 +93,11 @@ export interface DeskView {
 }
 
 const grpName: Array<[Filter, string]> = [["ALL", "ALL"], ["dir", "DIRECTION"], ["exec", "EXECUTION"], ["res", "RESEARCH"], ["risk", "RISK"]];
-const tabDefs: Array<[Tab, string]> = [["chat", "FLOOR CHAT"], ["approvals", "APPROVALS"], ["blotter", "BLOTTER"], ["console", "CONSOLE"]];
+const tabDefs: Array<[Tab, string]> = [["chat", "FLOOR CHAT"], ["approvals", "APPROVALS"], ["blotter", "BLOTTER"], ["scores", "SCORES"], ["console", "CONSOLE"]];
+
+const pct = (r: number | null): string => (r === null ? "—" : Math.round(r * 100) + "%");
+const signedPct = (v: number | null): string => (v === null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(2) + "%");
+const normRole = (r: string) => r.toUpperCase().replace(/\s+/g, " ").trim();
 
 const sideStyle = (side: Side) => ({
   sideBg: side === "SELL" ? "rgba(255,91,91,0.14)" : "rgba(62,207,142,0.14)",
@@ -242,12 +260,57 @@ export function buildView(s: DeskState): DeskView {
   }).reverse();
 
   const selAgent = s.sel === null ? null : s.agents[s.sel];
+  // ---- scorecards (core only) ----
+  const seatTint = (role: string): string => {
+    const a = s.agents.find((x) => normRole(x.role) === normRole(role));
+    return a ? TINTS[a.grp] : MUTED;
+  };
+  const seatOrder = (role: string): number => {
+    const i = s.agents.findIndex((x) => normRole(x.role) === normRole(role));
+    return i < 0 ? 1000 : i;
+  };
+  const cards = core ? Object.values(s.scores) : [];
+  const scores: ScoreRow[] = cards
+    .slice()
+    .sort((x, y) => seatOrder(x.role) - seatOrder(y.role) || x.role.localeCompare(y.role))
+    .map((c) => {
+      const guest = /^guest:/i.test(c.role.trim());
+      return {
+        key: c.agentId, name: c.name, sub: guest ? "GUEST · MCP" : c.role.toUpperCase(), model: c.model, guest,
+        tint: guest ? "var(--c9AA5B1)" : seatTint(c.role),
+        ideas: String(c.ideas),
+        hit: c.scored ? pct(c.hitRate) + " of " + c.scored : "—",
+        hitColor: c.hitRate === null ? MUTED : c.hitRate >= 0.5 ? UP : DOWN,
+        avg: signedPct(c.avgReturnPct),
+        avgColor: c.avgReturnPct === null ? MUTED : c.avgReturnPct >= 0 ? UP : DOWN,
+        fills: String(c.fills),
+        win: c.closes ? pct(c.winRate) + " of " + c.closes : "—",
+        pnl: c.fills || c.pnl ? money(c.pnl) : "—",
+        pnlColor: !(c.fills || c.pnl) ? MUTED : c.pnl >= 0 ? UP : DOWN,
+        dd: c.maxDrawdown > 0 ? "-" + cm(c.maxDrawdown) : "—",
+        vetoes: String(c.vetoes),
+      };
+    });
+  const scoresNote = !core
+    ? "Scorecards come from Bourse Core. Start it with pnpm dev and each agent's paper record builds up here."
+    : "HIT RATE: ideas that moved the right way 15 min later (configurable), traded or not. WIN RATE: closed paper trades that made money. Paper only.";
+
+  const selScore = selAgent && core ? cards.find((c) => normRole(c.role) === normRole(selAgent.role)) : undefined;
+  const track: TrackView | null = !core || !selAgent ? null : {
+    hit: pct(selScore?.hitRate ?? null), hitNote: selScore?.scored ? `${selScore.hits} of ${selScore.scored} ideas` : "no ideas scored yet",
+    win: pct(selScore?.winRate ?? null), winNote: selScore?.closes ? `${selScore.wins} of ${selScore.closes} closed` : "no closed trades yet",
+    pnl: selScore && (selScore.fills || selScore.pnl) ? money(selScore.pnl) : "—",
+    pnlColor: !selScore || !(selScore.fills || selScore.pnl) ? MUTED : selScore.pnl >= 0 ? UP : DOWN,
+    dd: selScore && selScore.maxDrawdown > 0 ? "-" + cm(selScore.maxDrawdown) : "—",
+    ideas: String(selScore?.ideas ?? 0), fills: String(selScore?.fills ?? 0),
+  };
+
   const sel: SelView | null = selAgent && s.sel !== null ? {
     idx: s.sel, name: selAgent.name, role: selAgent.role, model: selAgent.model, mandate: selAgent.mandate,
     initials: selAgent.name.split(" ").map((w) => w[0]).join(""), tint: TINTS[selAgent.grp],
     temp: selAgent.temp, tokens: selAgent.tokens, spend: selAgent.spend, latency: selAgent.latency,
     maxClip: selAgent.maxClip, leverage: selAgent.leverage, lossStop: selAgent.lossStop,
-    autonomy: selAgent.autonomy, paused: selAgent.paused, tools: selAgent.tools,
+    autonomy: selAgent.autonomy, paused: selAgent.paused, tools: selAgent.tools, track,
   } : null;
 
   const lastFill = fills[0]
@@ -261,7 +324,7 @@ export function buildView(s: DeskState): DeskView {
     tape,
     filters: grpName.map(([id, label]) => ({ id, label, active: s.filter === id })),
     roster, rosterCount: visible.length + " / " + onFloor.length + " AGENTS",
-    chat, fills, logs, approvals, nAppr, tabs,
+    chat, fills, logs, approvals, nAppr, tabs, scores, scoresNote, exportUrl: CORE_URL + "/export/ideas.jsonl",
     strip: core
       ? "CORE FLOOR · stub agents (not AI) · paper book on real prices · not advice"
       : "SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice",

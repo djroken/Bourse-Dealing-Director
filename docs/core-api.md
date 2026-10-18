@@ -25,6 +25,8 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/agents/:id` | One agent summary, or `404 { "error": "not found" }` |
 | POST | `/agents/halt-all` | `{ "ok": true, "halted": <n> }`: stops every agent from deciding |
 | POST | `/agents/resume-all` | `{ "ok": true, "resumed": <n> }` |
+| GET | `/scorecards` | `{ "horizonMs", "scorecards": [ … ] }`: every seat's paper track record (see [Scorecards](#scorecards)) |
+| GET | `/export/ideas.jsonl` | This session's ideas as JSON Lines, outcome `null` until scored. `?scored=1` for scored ideas only |
 | GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
 | PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
 | DELETE | `/secrets/:id` | Removes it, `404` if absent |
@@ -78,6 +80,14 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 ```
 
 `chat` is a line of floor talk from a guest agent (MCP `post_to_floor`).
+
+```jsonc
+{ "type": "scorecard", "agentId": "…", "role": "…", "name": "…", "model": "…", "ideas": 12, "holds": 3, "scored": 10, "hits": 6, "hitRate": 0.6,
+  "avgReturnPct": 0.42, "fills": 4, "vetoes": 1, "notional": 9000, "closes": 2, "wins": 1, "winRate": 0.5, "realized": 40, "pnl": 55.5,
+  "peakPnl": 80, "maxDrawdown": 31, "updatedAt": 0, "ts": 0 }
+```
+
+`scorecard` is a seat's track record (guests included). Every seat's card is sent on connect; after that a card goes out when it changes, at most every 2 seconds per seat. See [Scorecards](#scorecards).
 
 `config` is a seat's current settings. A new client receives one per seat on connect (after `lifecycle`, before `pnl`), and one is broadcast to everyone after each `configure_agent`. Core is authoritative: the Desk adopts it on connect and reconnect. `riskLimits` are read-only over the wire.
 
@@ -134,6 +144,25 @@ If you change `CORE_HOST` to a non-loopback address, put authentication and TLS 
 ## Risk gate
 
 Every agent decision passes through `apps/core/src/risk.ts` before it is emitted as checked. `maxClip` is the largest single order in **USD notional** (sizes are in asset units, rounded down so they never exceed it), and a seat stops deciding once its daily P&L, read from its paper book, is down by `dailyLossStop` USD. Non-numeric input fails closed (no trade). Only `AUTO` seats decide on their own; `SUGGEST` and `APPROVE` seats stop at an intent that a human can turn into a `place_order`. HALT ALL overrides everything. The seeded limits are sized for a $100k paper book.
+
+## Scorecards
+
+Every seat, guest agents included, builds a paper track record. It answers two separate questions:
+
+- **Was the idea any good?** Every BUY/SELL idea (stub, model or fallback) is recorded with the price, 24h change and feed it was made on, then scored against the price a fixed time later: `returnPct` is the move in the idea's direction, `correct` is `returnPct > 0`. This happens whether or not the idea was traded, so the hit rate measures the agent's signal, not the operator's approvals. The horizon is 15 minutes by default (`BOURSE_SCORE_HORIZON_MIN`, 1 to 1440).
+- **Did trading it make money?** Fills, notional, closed trades and wins (a close that realised a profit), P&L, peak P&L and maximum drawdown, from the seat's paper book. Risk vetoes and rejected orders count as `vetoes`.
+
+A fill is matched to the newest unfilled idea from the same seat, symbol and side made within 30 minutes, which marks that idea `filled`.
+
+**Training and evaluation data.** `GET /export/ideas.jsonl` returns this session's ideas, one JSON object per line:
+
+```jsonc
+{ "id": "…", "ts": 0, "agentId": "TKT-004", "role": "Quant / Signals", "name": "…", "model": "ollama:llama3.2", "temperature": 0.2, "autonomy": "APPROVE",
+  "symbol": "BTC-USDT", "side": "BUY", "size": 0.01, "confidence": 0.6, "rationale": "…", "price": 96400, "change24h": 2.1, "source": "binance",
+  "filled": false, "outcome": { "horizonMs": 900000, "exitPrice": 96820, "returnPct": 0.4357, "correct": true } }
+```
+
+Each idea is also appended to `<BOURSE_DATA_DIR>/ideas.jsonl` (default `./.bourse/ideas.jsonl`, file mode 600) once it is scored, so the log survives restarts and grows across sessions. Turn that off with `BOURSE_IDEA_LOG=off`. Scorecards themselves start fresh when core restarts. Everything here is paper trading on live prices; none of it is financial advice or evidence that an agent will make money.
 
 ## MCP: guest agents with demo funds
 

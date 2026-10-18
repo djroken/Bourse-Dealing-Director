@@ -31,6 +31,7 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
 | Bourse Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, an agent engine (stub rules, or Ollama/OpenRouter models that only suggest) with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
+| Agent scorecards | **Working, when core is running** | Each agent's paper track record in the SCORES tab and the agent drawer: hit rate (did the idea's price move the right way 15 minutes later, traded or not), win rate, P&L and max drawdown. Every idea and its outcome can be exported as JSON Lines for evaluation or fine-tuning. See [docs/core-api.md](docs/core-api.md#scorecards) |
 | Guest agents over MCP | **Working** | Set `BOURSE_MCP_TOKEN` and any MCP client can connect to `/mcp`, get its own $100k paper account on live prices and trade it through the same risk gate. See [docs/core-api.md](docs/core-api.md) |
 | Anthropic/OpenAI/Gemini adapters, runtime adapters | Planned | |
 | Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
@@ -118,7 +119,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Server-side encrypted key storage (the OpenRouter adapter reads its key from it)
 - [x] MCP server: outside agents trade their own paper account on live prices
 - [ ] More markets: stocks (Alpaca, IBKR) and FX alongside crypto
-- [ ] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
+- [x] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
 - [ ] Execution layer and venue adapters, then Live mode (opt-in, own keys, behind the same risk gate and HALT ALL)
 
 ## Contributing
