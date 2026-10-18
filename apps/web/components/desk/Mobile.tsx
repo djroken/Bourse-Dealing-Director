@@ -5,7 +5,7 @@ import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskState, MobileTab } from "@/lib/desk/state";
 import type { DeskView } from "@/lib/desk/view";
 import { ApprovalCard, QueueClear } from "./ApprovalCard";
-import { ChartBody, ChartToggle } from "./Chart";
+import { ChartBody, ChartToggle, ChartTools } from "./Chart";
 import { GlassSlider, ThemeSwitch } from "./Footer";
 import { m } from "./ui";
 
@@ -135,8 +135,11 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                   <ChartToggle s={s} a={a} size="lg" />
                 </div>
               </div>
+              <div style={{ padding: "8px 8px 0" }}>
+                <ChartTools s={s} v={v} a={a} size="lg" />
+              </div>
               <div style={{ height: 300, padding: 6 }}>
-                <ChartBody s={s} v={v} grid={false} />
+                {s.chartFull ? <div className="hz-chart-away">Chart is open full screen</div> : <ChartBody s={s} v={v} grid={false} />}
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", borderTop: "1px solid var(--w07)" }}>
                 {([["NET POS", v.chart.netPos, "var(--cE6EAEE)"], ["FUNDING", v.chart.funding, "var(--cFFB13D)"], ["VOL 24H", v.chart.vol, "var(--cB4BEC7)"]] as const).map(([label, value, color]) => (

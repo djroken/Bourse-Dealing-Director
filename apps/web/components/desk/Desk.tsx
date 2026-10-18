@@ -3,6 +3,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { useDesk } from "@/lib/desk/useDesk";
 import AgentDrawer from "./AgentDrawer";
+import { ChartFull } from "./Chart";
 import CentreWindow from "./CentreWindow";
 import Footer from "./Footer";
 import Header from "./Header";
@@ -39,6 +40,7 @@ function DeskInner() {
           <Footer s={s} v={v} a={a} />
         </>
       )}
+      {s.chartFull && <ChartFull s={s} v={v} a={a} />}
       <AgentDrawer v={v} a={a} />
       <Modals s={s} v={v} a={a} />
       {s.setupNotice && <Onboarding s={s} v={v} a={a} />}

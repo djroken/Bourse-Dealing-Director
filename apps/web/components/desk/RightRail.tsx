@@ -4,7 +4,7 @@ import { NEWS } from "@/lib/desk/data";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskState } from "@/lib/desk/state";
 import type { DeskView } from "@/lib/desk/view";
-import { ChartBody, ChartToggle } from "./Chart";
+import { ChartBody, ChartToggle, ChartTools } from "./Chart";
 import { m } from "./ui";
 
 const TAG_COLOR: Record<string, { color: string; border: string }> = {
@@ -22,15 +22,18 @@ export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: D
         <div className="hz-panel-head" style={{ padding: "0 12px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9 }}>
             <span style={m(11.5, "0.1em", "var(--cE6EAEE)")}>{c.label}</span>
-            <span style={m(10, undefined, "var(--c5D6873)")}>5m · {c.feedShort}</span>
+            <span style={m(10, undefined, "var(--c5D6873)")}>{c.tf} · {c.feedShort}</span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span style={m(12, undefined, c.color)}>{c.last}</span>
             <ChartToggle s={s} a={a} />
           </div>
         </div>
+        <div style={{ padding: "6px 8px 0" }}>
+          <ChartTools s={s} v={v} a={a} />
+        </div>
         <div style={{ flex: 1, minHeight: 0, padding: 8 }}>
-          <ChartBody s={s} v={v} />
+          {s.chartFull ? <div className="hz-chart-away">Chart is open full screen</div> : <ChartBody s={s} v={v} />}
         </div>
         <div className="hz-chartstats">
           <div><div style={m(8.5, "0.14em", "var(--c5D6873)")}>NET POS</div><div style={m(12.5, undefined, undefined, { marginTop: 3 })}>{c.netPos}</div></div>

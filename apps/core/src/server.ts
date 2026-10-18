@@ -8,7 +8,7 @@ import type { CoreConfig } from './config';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { MCP_AGENT_HEADER, createMcpServer, tokenOk } from './mcp';
 import { createAdvisor } from './models';
-import { createEngine, type Engine, type Logger } from './engine';
+import { TRADED_SYMBOLS, createEngine, type Engine, type Logger } from './engine';
 import type { IdeaRecord } from './scorecard';
 import { fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
@@ -130,6 +130,13 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
 
   // ---- scorecards and the idea log ---------------------------------------------------------------------------------
   server.get('/scorecards', async () => ({ horizonMs: engine.scoreHorizonMs, scorecards: engine.scorecards() }));
+  /** Recent ideas for one symbol, oldest first: what the Desk draws on its chart. */
+  server.get<{ Querystring: { symbol?: string; limit?: string } }>('/ideas', async (req, reply) => {
+    const symbol = req.query.symbol;
+    if (symbol !== undefined && !TRADED_SYMBOLS.includes(symbol)) return reply.code(400).send({ error: `symbol must be one of ${TRADED_SYMBOLS.join(', ')}` });
+    const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit ?? '200', 10) || 200));
+    return engine.ideas().filter((r) => !symbol || r.symbol === symbol).slice(-limit);
+  });
   /** This session's ideas as JSON Lines, one per idea, outcome null until it is scored. For evaluation or fine-tuning. */
   server.get<{ Querystring: { scored?: string } }>('/export/ideas.jsonl', async (req, reply) => {
     const onlyScored = req.query.scored === '1' || req.query.scored === 'true';

@@ -5,7 +5,8 @@ import { type Agent, type Mode, DEFAULT_SETUP, LIVE_AVAILABLE, LBL, PERP, SEED_A
 import { fmt, fmtQty } from "./format";
 import { applyCoreMsg, coreFloorUrl, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "./core";
 import { VENUE_STEP, persistable } from "./onboarding";
-import { fetchCloses, fetchEurUsd, fetchFundingRate, fetchQuotes } from "./market";
+import { fetchCandles, fetchEurUsd, fetchFundingRate, fetchQuotes, type Timeframe } from "./market";
+import { fetchSignals } from "./signals";
 import {
   type DeskState, type Fill, type Filter, type MobileTab, type Tab,
   bookScale, createInitialState, makeFills, seqPx, tickState, venuesReady,
@@ -202,9 +203,11 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
 
   // ---- market data ---------------------------------------------------------
   const symRef = useRef(s.chartSym);
+  const tfRef = useRef<Timeframe>(s.chartTf);
   useEffect(() => {
     symRef.current = s.chartSym;
-  }, [s.chartSym]);
+    tfRef.current = s.chartTf;
+  }, [s.chartSym, s.chartTf]);
   const fundingAt = useRef(0);
 
   // Loaders are promise chains (not async bodies) so state only changes in callbacks, never synchronously in an effect.
@@ -217,10 +220,23 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
 
   const loadCloses = useCallback(() => {
     const sym = symRef.current;
-    void fetchCloses(sym).then((closes) => {
-      if (closes && closes.length > 2) patch((st) => ({ kl: { ...st.kl, [sym]: closes } }));
+    const tf = tfRef.current;
+    void fetchCandles(sym, tf).then((cs) => {
+      if (cs && cs.length > 2) patch((st) => ({ kl: { ...st.kl, [sym + "|" + tf]: cs } }));
     });
   }, [patch]);
+
+  // Agents' ideas for the chart symbol, from core. Polled while core is connected; cleared when it goes away.
+  const loadSignals = useCallback(() => {
+    const sym = symRef.current;
+    void fetchSignals(sym).then((list) => patch((st) => (st.core === "live" ? { signals: { ...st.signals, [sym]: list } } : null)));
+  }, [patch]);
+  useEffect(() => {
+    if (s.core !== "live") return;
+    loadSignals();
+    const t = setInterval(loadSignals, 30_000);
+    return () => clearInterval(t);
+  }, [s.core, s.chartSym, loadSignals]);
 
   const loadQuotes = useCallback(() => {
     void fetchQuotes().then((got) => {
@@ -271,6 +287,16 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
     loadFunding();
   }, [s.chartSym, loadCloses, loadFunding]);
 
+  // New timeframe → new candles.
+  const firstTf = useRef(true);
+  useEffect(() => {
+    if (firstTf.current) {
+      firstTf.current = false;
+      return;
+    }
+    loadCloses();
+  }, [s.chartTf, loadCloses]);
+
   // ---- actions -------------------------------------------------------------
   const actions = useMemo(() => {
     const patchSel = (p: Partial<Agent>) => {
@@ -307,6 +333,10 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
       },
       selectSym: (chartSym: string) => patch({ chartSym }),
       setChartSrc: (chartSrc: "tv" | "native") => patch({ chartSrc }),
+      setChartTf: (chartTf: Timeframe) => patch({ chartTf }),
+      toggleChartFull: () => patch((st) => ({ chartFull: !st.chartFull })),
+      closeChartFull: () => patch({ chartFull: false }),
+      toggleSignals: () => patch((st) => ({ chartSignals: !st.chartSignals })),
       toggleHalt: () => {
         const st = stateRef.current;
         const ws = coreWs.current;
