@@ -24,7 +24,7 @@ const feedDeps = {
 let running: ReturnType<typeof buildServer> | undefined;
 const clients: Client[] = [];
 async function boot(mcpToken: string | null = TOKEN) {
-  const config = { ...loadConfig({ CORE_PORT: '0', CORE_HOST: '127.0.0.1' }), feedIntervalMs: 60_000, mcpToken: mcpToken ?? undefined };
+  const config = { ...loadConfig({ CORE_PORT: '0', CORE_HOST: '127.0.0.1' }), feedIntervalMs: 60_000, mcpToken: mcpToken ?? undefined, persist: false, ideaLog: false };
   running = buildServer(config, { feedDeps, engine: createEngine({ cooldownMs: 0 }) });
   const port = await running.start();
   await running.pollOnce();

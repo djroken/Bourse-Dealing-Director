@@ -213,3 +213,27 @@ test("without core the SCORES tab explains where the numbers come from", async (
   await expect(page.locator(".hz-centre")).toContainText("Scorecards come from Bourse Core");
   await expect(page.getByTestId("score-row")).toHaveCount(0);
 });
+
+test("RESET PAPER needs two clicks and asks core to reset", async ({ page }) => {
+  const core = await mockCore(page);
+  let resets = 0;
+  await page.route(/127\.0\.0\.1:4000\/paper\/reset/, (route) => {
+    if (route.request().method() === "POST") resets++;
+    return route.fulfill({ json: { ok: true } });
+  });
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  core.send({
+    type: "scorecard", agentId: "TKT-002", role: "Execution Trader", name: "Atlas Reyner", model: "m", ideas: 1, holds: 0, scored: 0, hits: 0, hitRate: null,
+    avgReturnPct: null, fills: 1, vetoes: 0, notional: 1, closes: 0, wins: 0, winRate: null, realized: 0, pnl: 5, peakPnl: 5, maxDrawdown: 0, updatedAt: 1, ts: 1,
+  });
+  await page.locator(".hz-tab", { hasText: "SCORES" }).click();
+  const btn = page.getByRole("button", { name: "RESET PAPER" });
+  await btn.click();
+  await expect(page.getByRole("button", { name: "CLICK AGAIN TO RESET" })).toBeVisible();
+  expect(resets).toBe(0);
+  await page.getByRole("button", { name: "CLICK AGAIN TO RESET" }).click();
+  await expect.poll(() => resets).toBe(1);
+  await page.locator(".hz-tab", { hasText: "FLOOR CHAT" }).click();
+  await expect(page.locator(".hz-log")).toContainText("Paper books and scorecards reset by YOU");
+});

@@ -41,6 +41,18 @@ export interface IdeaRecord extends IdeaInput {
   /** True once a fill on the paper book was matched to this idea (auto-filled, or approved by the operator). */
   filled: boolean;
   outcome: IdeaOutcome | null;
+  /**
+   * Set when no price arrived near the horizon (core was stopped, or the feed was down), so the idea could not be
+   * scored fairly. Expired ideas are never scored and don't count towards the hit rate.
+   */
+  expired?: boolean;
+}
+
+/** Everything a scorebook needs to carry on after a restart. */
+export interface ScoreDump {
+  cards: Scorecard[];
+  returnSum: Record<string, number>;
+  ideas: IdeaRecord[];
 }
 
 export interface Scorecard {
@@ -92,6 +104,8 @@ export function createScorebook(opts: ScorebookOptions = {}) {
   const now = opts.now ?? Date.now;
   const horizonMs = opts.horizonMs ?? 15 * 60_000;
   const maxIdeas = opts.maxIdeas ?? 5000;
+  /** How late a price may be and still score an idea. Later than this, the idea expires unscored. */
+  const staleMs = Math.max(5 * 60_000, horizonMs / 2);
   const ideas: IdeaRecord[] = [];
   const cards = new Map<string, Scorecard>();
   let seq = 0;
@@ -193,7 +207,11 @@ export function createScorebook(opts: ScorebookOptions = {}) {
       const t = now();
       const done: IdeaRecord[] = [];
       for (const r of ideas) {
-        if (r.outcome || r.symbol !== symbol || t - r.ts < horizonMs) continue;
+        if (r.outcome || r.expired || r.symbol !== symbol || t - r.ts < horizonMs) continue;
+        if (t - r.ts > horizonMs + staleMs) {
+          r.expired = true; // the price now says nothing fair about the horizon
+          continue;
+        }
         const move = ((price - r.price) / r.price) * 100 * (r.side === 'BUY' ? 1 : -1);
         r.outcome = { horizonMs, exitPrice: price, returnPct: round(move, 4), correct: move > 0 };
         const c = cards.get(r.agentId);
@@ -210,6 +228,37 @@ export function createScorebook(opts: ScorebookOptions = {}) {
         opts.onResolved?.(r);
       }
       return done;
+    },
+
+    /** For saving to disk. */
+    dump(): ScoreDump {
+      return { cards: [...cards.values()].map((c) => ({ ...c })), returnSum: Object.fromEntries(returnSum), ideas: ideas.map((r) => ({ ...r })) };
+    },
+    /** Restore a dump. `rename` maps a saved agent id to the id the seat has now (guests can be renumbered). */
+    load(d: ScoreDump, rename: (id: string) => string | undefined = (id) => id): void {
+      for (const c of d.cards) {
+        const id = rename(c.agentId);
+        if (id) cards.set(id, { ...c, agentId: id });
+      }
+      for (const [id, v] of Object.entries(d.returnSum)) {
+        const to = rename(id);
+        if (to && Number.isFinite(v)) returnSum.set(to, v);
+      }
+      for (const r of d.ideas.slice(-maxIdeas)) {
+        const id = rename(r.agentId);
+        if (id) ideas.push({ ...r, agentId: id });
+      }
+      ideas.sort((a, b) => a.ts - b.ts);
+      while (ideas.length > maxIdeas) ideas.shift();
+      for (const id of cards.keys()) revs.set(id, (revs.get(id) ?? 0) + 1);
+    },
+    /** Forget everything: every card back to zero, no ideas. */
+    reset(): void {
+      const seats = [...cards.values()].map((c) => ({ agentId: c.agentId, role: c.role, name: c.name, model: c.model }));
+      cards.clear();
+      returnSum.clear();
+      ideas.length = 0;
+      for (const s of seats) touch(card(s));
     },
 
     rev: (agentId: string): number => revs.get(agentId) ?? 0,

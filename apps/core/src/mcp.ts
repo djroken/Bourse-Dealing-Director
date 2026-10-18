@@ -47,7 +47,7 @@ export function createMcpServer(engine: Engine, guest: FloorAgent): McpServer {
 
   server.registerTool(
     'get_risk',
-    { description: 'Your risk limits (max order in USD, leverage, daily loss stop), how much of each you have used, and whether the floor is halted.', inputSchema: {} },
+    { description: 'Your risk limits (max order in USD, leverage, daily loss stop), how much of each you have used, and whether the floor is halted. pnl is your total; todayPnl is what the daily loss stop counts (resets at midnight UTC).', inputSchema: {} },
     async () => json(engine.riskOf(guest)),
   );
 

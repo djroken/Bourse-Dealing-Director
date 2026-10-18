@@ -20,6 +20,8 @@ export interface CoreConfig {
   ideaLog?: boolean;
   /** Minutes after an idea that its outcome is measured. Default 15. */
   scoreHorizonMin?: number;
+  /** Keep paper books, scorecards and seat settings in <dataDir>/state.json across restarts. Default on. */
+  persist?: boolean;
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -72,6 +74,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     modelDailyCap: { ollama: capOf(env.OLLAMA_DAILY_CAP, 0), openrouter: capOf(env.OPENROUTER_DAILY_CAP, 200) },
     ideaLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_IDEA_LOG') ?? ''),
     scoreHorizonMin: horizonOf(pick(env, 'BOURSE_SCORE_HORIZON_MIN')),
+    persist: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_PERSIST') ?? ''),
   };
 }
 

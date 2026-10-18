@@ -28,6 +28,7 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/scorecards` | `{ "horizonMs", "scorecards": [ … ] }`: every seat's paper track record (see [Scorecards](#scorecards)) |
 | GET | `/ideas?symbol=BTC-USDT&limit=200` | Recent ideas (oldest first) as a JSON array, optionally for one symbol; `limit` 1 to 1000. The Desk draws these on its chart |
 | GET | `/export/ideas.jsonl` | This session's ideas as JSON Lines, outcome `null` until scored. `?scored=1` for scored ideas only |
+| POST | `/paper/reset` | `{ "ok": true }`: every paper book and scorecard back to zero; seat settings are kept. Not undoable |
 | GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
 | PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
 | DELETE | `/secrets/:id` | Removes it, `404` if absent |
@@ -164,6 +165,22 @@ A fill is matched to the newest unfilled idea from the same seat, symbol and sid
 ```
 
 Each idea is also appended to `<BOURSE_DATA_DIR>/ideas.jsonl` (default `./.bourse/ideas.jsonl`, file mode 600) once it is scored, so the log survives restarts and grows across sessions. Turn that off with `BOURSE_IDEA_LOG=off`. With the four stub trading seats running all day the file grows by roughly 40 MB a day, so delete or rotate it when you no longer need it. Scorecards themselves start fresh when core restarts. Everything here is paper trading on live prices; none of it is financial advice or evidence that an agent will make money.
+
+## Paper state across restarts
+
+Core saves the floor to `<BOURSE_DATA_DIR>/state.json` (default `./.bourse/state.json`, mode 600) every 30 seconds and when it stops, and loads it on start:
+
+- every paper book, guest agents' included (guests come back under the same name);
+- each seat's model, temperature, autonomy, mandate and paused state (risk limits always come from the code);
+- the scorecards and the ideas behind them.
+
+Seats are matched by role. A file that doesn't validate is moved aside to `state.json.bad-<time>` and core starts a fresh floor rather than half-loading it. `BOURSE_PERSIST=off` turns all of this off.
+
+An idea whose horizon passed while core was stopped (or while the feed was down for more than 5 minutes past the horizon) is marked `expired` and never scored, so a restart can't score it on an unrelated later price.
+
+The **daily loss stop counts each UTC day on its own**: at the first mark after midnight UTC a seat's loss-stop P&L starts again from zero, while its total P&L and scorecard carry on. `get_risk` (MCP) reports both `pnl` (total) and `todayPnl`.
+
+`POST /paper/reset` (the Desk's **RESET PAPER**, which asks for a second click) zeroes every book and scorecard and clears the idea list. The `ideas.jsonl` log on disk is left alone.
 
 ## MCP: guest agents with demo funds
 

@@ -150,6 +150,19 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                 ))}
               </div>
             </div>
+            <div style={m(9.5, "0.18em", "var(--c98A3AD)", { padding: "6px 2px 0" })}>AGENT SCORECARDS · PAPER</div>
+            {v.scores.length === 0 && <div style={m(10, "0.04em", "var(--c6B7681)", { padding: "0 2px", lineHeight: 1.5 })}>{v.scoresNote}</div>}
+            {v.scores.map((r) => (
+              <div key={r.key} className="hz-mfill" data-testid="mobile-score">
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+                  <span className="hz-ellipsis" style={{ fontSize: 13.5, fontWeight: 600, color: r.tint }}>{r.name}</span>
+                  <span className="hz-ellipsis" style={m(9.5, undefined, "var(--c6B7681)", { whiteSpace: "nowrap" })}>
+                    HIT <span style={{ color: r.hitColor }}>{r.hit}</span> · WIN {r.win} · DD {r.dd}
+                  </span>
+                </div>
+                <span style={m(12.5, undefined, r.pnlColor, { flex: "none" })}>{r.pnl}</span>
+              </div>
+            ))}
             <div style={m(9.5, "0.18em", "var(--c98A3AD)", { padding: "6px 2px 0" })}>RECENT FILLS</div>
             {v.fills.slice(0, 8).map((f) => (
               <div key={f.key} className="hz-mfill">

@@ -10,6 +10,7 @@ import { MCP_AGENT_HEADER, createMcpServer, tokenOk } from './mcp';
 import { createAdvisor } from './models';
 import { TRADED_SYMBOLS, createEngine, type Engine, type Logger } from './engine';
 import type { IdeaRecord } from './scorecard';
+import { loadSnapshot, saveSnapshot } from './persist';
 import { fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
@@ -52,6 +53,25 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       .catch((err: unknown) => server.log.warn(`could not write ${ideaFile}: ${err instanceof Error ? err.message : String(err)}`));
   };
   const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea });
+  // ---- paper state across restarts --------------------------------------------------------------------------------
+  const stateFile = join(config.dataDir, 'state.json');
+  const persist = config.persist !== false;
+  if (persist) {
+    const loaded = loadSnapshot(stateFile);
+    if (loaded.kind === 'ok') engine.restore(loaded.snap);
+    else if (loaded.kind === 'bad') server.log.warn(`ignored ${stateFile} (${loaded.reason}); moved it to ${loaded.movedTo} and started a fresh paper floor`);
+  }
+  const saveState = (): void => {
+    if (!persist) return;
+    try {
+      saveSnapshot(stateFile, engine.snapshot());
+    } catch (err) {
+      server.log.warn(`could not save ${stateFile}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+  const saver = setInterval(saveState, 30_000);
+  saver.unref();
+
   const feedDeps: FeedDeps = deps.feedDeps ?? { fetchJson: (url, init) => fetchJson(url, { init }), now: Date.now };
 
   const originAllowed = (origin: string | undefined): boolean =>
@@ -129,6 +149,12 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.get('/models', async () => advisor.status());
 
   // ---- scorecards and the idea log ---------------------------------------------------------------------------------
+  /** Start every paper book and scorecard again from zero (seat settings stay). Not undoable: the Desk asks twice. */
+  server.post('/paper/reset', async () => {
+    engine.resetPaper();
+    saveState();
+    return { ok: true };
+  });
   server.get('/scorecards', async () => ({ horizonMs: engine.scoreHorizonMs, scorecards: engine.scorecards() }));
   /** Recent ideas for one symbol, oldest first: what the Desk draws on its chart. */
   server.get<{ Querystring: { symbol?: string; limit?: string } }>('/ideas', async (req, reply) => {
@@ -253,6 +279,8 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     },
     async stop(): Promise<void> {
       stopped = true;
+      clearInterval(saver);
+      saveState();
       await ideaWrites;
       if (timer) clearTimeout(timer);
       clearInterval(sweep);
