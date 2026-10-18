@@ -154,7 +154,7 @@ Every seat, guest agents included, builds a paper track record. It answers two s
 
 A fill is matched to the newest unfilled idea from the same seat, symbol and side made within 30 minutes, which marks that idea `filled`.
 
-**Training and evaluation data.** `GET /export/ideas.jsonl` returns this session's ideas, one JSON object per line:
+**Training and evaluation data.** `GET /export/ideas.jsonl` returns this session's most recent ideas (up to 5,000), one JSON object per line:
 
 ```jsonc
 { "id": "…", "ts": 0, "agentId": "TKT-004", "role": "Quant / Signals", "name": "…", "model": "ollama:llama3.2", "temperature": 0.2, "autonomy": "APPROVE",
@@ -162,7 +162,7 @@ A fill is matched to the newest unfilled idea from the same seat, symbol and sid
   "filled": false, "outcome": { "horizonMs": 900000, "exitPrice": 96820, "returnPct": 0.4357, "correct": true } }
 ```
 
-Each idea is also appended to `<BOURSE_DATA_DIR>/ideas.jsonl` (default `./.bourse/ideas.jsonl`, file mode 600) once it is scored, so the log survives restarts and grows across sessions. Turn that off with `BOURSE_IDEA_LOG=off`. Scorecards themselves start fresh when core restarts. Everything here is paper trading on live prices; none of it is financial advice or evidence that an agent will make money.
+Each idea is also appended to `<BOURSE_DATA_DIR>/ideas.jsonl` (default `./.bourse/ideas.jsonl`, file mode 600) once it is scored, so the log survives restarts and grows across sessions. Turn that off with `BOURSE_IDEA_LOG=off`. With the four stub trading seats running all day the file grows by roughly 40 MB a day, so delete or rotate it when you no longer need it. Scorecards themselves start fresh when core restarts. Everything here is paper trading on live prices; none of it is financial advice or evidence that an agent will make money.
 
 ## MCP: guest agents with demo funds
 
