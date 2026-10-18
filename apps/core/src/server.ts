@@ -11,6 +11,8 @@ import { createAdvisor } from './models';
 import { TRADED_SYMBOLS, createEngine, type Engine, type Logger } from './engine';
 import type { IdeaRecord } from './scorecard';
 import { loadSnapshot, saveSnapshot } from './persist';
+import { createReplayRunner, type ReplayTf } from './replay';
+import { z } from 'zod';
 import { fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
@@ -149,6 +151,52 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.get('/models', async () => advisor.status());
 
   // ---- scorecards and the idea log ---------------------------------------------------------------------------------
+  // ---- replay: run seats over past candles ---------------------------------------------------------------------------
+  const replays = createReplayRunner({
+    fetchJson: (url) => feedDeps.fetchJson(url),
+    now: () => Date.now(),
+    advisor,
+    seatsFor: (roles) => {
+      const want = roles?.map((r) => r.toUpperCase().replace(/\s+/g, ' ').trim());
+      return engine.agents
+        .filter((a) => a.config.trades && !a.external && (!want || want.includes(a.config.role.toUpperCase().replace(/\s+/g, ' ').trim())))
+        .map((a) => ({
+          role: a.config.role, name: a.config.name, model: a.config.model, temperature: a.config.temperature, mandate: a.config.mandate,
+          maxClip: a.config.riskLimits.maxClip, usesModel: advisor.handles(a.config.model),
+        }));
+    },
+  });
+  const ReplayBody = z.object({
+    symbol: z.enum(TRADED_SYMBOLS as [string, ...string[]]),
+    timeframe: z.enum(['1m', '5m', '15m', '1h']),
+    days: z.number().int().min(1).max(30),
+    horizon: z.number().int().min(1).max(96).default(3),
+    feeBps: z.number().min(0).max(100).default(5),
+    maxModelCalls: z.number().int().min(1).max(500).default(60),
+    roles: z.array(z.string().min(1).max(64)).max(16).optional(),
+  });
+  server.post('/replay', async (req, reply) => {
+    const parsed = ReplayBody.safeParse(req.body ?? {});
+    if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues.map((i) => `${i.path.join('.') || 'body'}: ${i.message}`).join('; ') });
+    const { roles, ...p } = parsed.data;
+    const started = replays.start({ ...p, timeframe: p.timeframe as ReplayTf }, roles);
+    if (!('id' in started)) return reply.code(started.error.includes('already') ? 409 : 400).send(started);
+    return reply.code(202).send(started);
+  });
+  server.get('/replay', async () => ({ job: replays.current() }));
+  server.get<{ Params: { id: string } }>('/replay/:id', async (req, reply) => replays.get(req.params.id) ?? reply.code(404).send({ error: 'not found' }));
+  server.delete<{ Params: { id: string } }>('/replay/:id', async (req, reply) =>
+    replays.cancel(req.params.id) ? { ok: true } : reply.code(404).send({ error: 'no running replay with that id' }),
+  );
+  server.get<{ Params: { id: string } }>('/replay/:id/ideas.jsonl', async (req, reply) => {
+    const rows = replays.ideas(req.params.id);
+    if (!rows) return reply.code(404).send({ error: 'no finished replay with that id' });
+    return reply
+      .header('Content-Type', 'application/x-ndjson; charset=utf-8')
+      .header('Content-Disposition', `attachment; filename="bourse-replay-${req.params.id}.jsonl"`)
+      .send(rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
+  });
+
   /** Start every paper book and scorecard again from zero (seat settings stay). Not undoable: the Desk asks twice. */
   server.post('/paper/reset', async () => {
     engine.resetPaper();

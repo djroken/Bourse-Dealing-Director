@@ -936,6 +936,17 @@ a:hover {
   white-space: nowrap;
 }
 
+/* Replay */
+.hz-replay-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) 76px 56px 66px 56px 62px 60px 44px;
+  align-items: center;
+  column-gap: 6px;
+  min-width: 560px;
+  padding: 8px 10px;
+  white-space: nowrap;
+}
+
 /* Approvals */
 .hz-appr {
   display: flex;

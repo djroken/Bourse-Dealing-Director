@@ -16,7 +16,8 @@
   <img src="docs/screenshots/scores.png" alt="The SCORES tab: each agent's hit rate, win rate, P&L and drawdown on paper" width="49%">
   <img src="docs/screenshots/chart-full.png" alt="The full-screen chart with agents' ideas as buy and sell markers, and the list of ideas beside it" width="49%">
 </p>
-<sub>Scorecards and the full-screen chart with agents' ideas. Sample data; prices in these shots are simulated because they were taken offline.</sub>
+<p><img src="docs/screenshots/replay.png" alt="The REPLAY tab: settings for symbol, candles, period and horizon, and per-seat results" width="49%"></p>
+<sub>Scorecards, the full-screen chart with agents' ideas, and replay. Sample data; prices in these shots are simulated because they were taken offline.</sub>
 
 ## What it is
 
@@ -38,6 +39,7 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
 | Bourse Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, an agent engine (stub rules, or Ollama/OpenRouter models that only suggest) with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
+| Replay | **Working, when core is running** | The REPLAY tab runs the trading seats over up to 30 days of past candles (BTC, ETH, SOL; 1m to 1h) with their current model and mandate. Agents only see candles up to the moment they decide; each idea is scored on the close a few candles later and booked as a paper trade after fees. Results per seat (hit rate, P&L, drawdown, failed model calls) plus a JSON Lines export. Model seats are sampled to a call budget. See [docs/core-api.md](docs/core-api.md#replay) |
 | Paper state across restarts | **Working** | Core keeps every paper book (guests too), the scorecards and each seat's settings in `.bourse/state.json` and picks them up on the next start. **RESET PAPER** in the SCORES tab starts the books again from zero. The daily loss stop counts each UTC day on its own |
 | Agent scorecards | **Working, when core is running** | Each agent's paper track record in the SCORES tab and the agent drawer: hit rate (did the idea's price move the right way 15 minutes later, traded or not), win rate, P&L and max drawdown. Every idea and its outcome can be exported as JSON Lines for evaluation or fine-tuning. See [docs/core-api.md](docs/core-api.md#scorecards) |
 | Guest agents over MCP | **Working** | Set `BOURSE_MCP_TOKEN` and any MCP client can connect to `/mcp`, get its own $100k paper account on live prices and trade it through the same risk gate. See [docs/core-api.md](docs/core-api.md) |
@@ -128,6 +130,8 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] MCP server: outside agents trade their own paper account on live prices
 - [ ] More markets: stocks (Alpaca, IBKR) and FX alongside crypto
 - [x] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
+- [x] Paper books, scorecards and seat settings survive restarts
+- [x] Replay: score agents on past candles in minutes, with no look-ahead
 - [ ] Execution layer and venue adapters, then Live mode (opt-in, own keys, behind the same risk gate and HALT ALL)
 
 ## Contributing

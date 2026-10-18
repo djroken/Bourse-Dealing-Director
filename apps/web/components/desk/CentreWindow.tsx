@@ -5,6 +5,7 @@ import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskState } from "@/lib/desk/state";
 import type { ChatRow, DeskView } from "@/lib/desk/view";
 import { ApprovalCard, QueueClear } from "./ApprovalCard";
+import Replay from "./Replay";
 import { m } from "./ui";
 
 /** One floor-chat event, shared by the desktop log and the mobile chat. */
@@ -175,6 +176,8 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
           </div>
         </div>
       )}
+
+      {s.tab === "replay" && <Replay s={s} />}
 
       {s.tab === "console" && (
         <div style={{ ...m(11.5), flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px", lineHeight: 1.75 }}>

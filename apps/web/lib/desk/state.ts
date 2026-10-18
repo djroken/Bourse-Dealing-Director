@@ -7,7 +7,7 @@ import type { Candle, FeedName, Quote, Timeframe } from "./market";
 import type { Signal } from "./signals";
 import { DEFAULT_GLASS_ALPHA, type ThemeName } from "./theme";
 
-export type Tab = "chat" | "approvals" | "blotter" | "scores" | "console";
+export type Tab = "chat" | "approvals" | "blotter" | "scores" | "replay" | "console";
 export type MobileTab = "floor" | "chat" | "approvals" | "markets" | "more";
 export type Filter = "ALL" | "dir" | "exec" | "res" | "risk";
 
