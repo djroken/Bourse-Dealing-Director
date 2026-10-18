@@ -29,6 +29,11 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/ideas?symbol=BTC-USDT&limit=200` | Recent ideas (oldest first) as a JSON array, optionally for one symbol; `limit` 1 to 1000. The Desk draws these on its chart |
 | GET | `/export/ideas.jsonl` | This session's ideas as JSON Lines, outcome `null` until scored. `?scored=1` for scored ideas only |
 | POST | `/paper/reset` | `{ "ok": true }`: every paper book and scorecard back to zero; seat settings are kept. Not undoable |
+| POST | `/replay` | Start a replay (see [Replay](#replay)). `202` with the job, `409` if one is already running, `400` on a bad body |
+| GET | `/replay` | `{ "job": … }`: the current or last replay, or `null` |
+| GET | `/replay/:id` | That job: `status` (`fetching`, `running`, `done`, `failed`, `cancelled`), `progress` 0..1, `params`, `result` |
+| DELETE | `/replay/:id` | Cancel a running replay |
+| GET | `/replay/:id/ideas.jsonl` | Every idea of a finished replay with its outcome and P&L, as JSON Lines |
 | GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
 | PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
 | DELETE | `/secrets/:id` | Removes it, `404` if absent |
@@ -165,6 +170,32 @@ A fill is matched to the newest unfilled idea from the same seat, symbol and sid
 ```
 
 Each idea is also appended to `<BOURSE_DATA_DIR>/ideas.jsonl` (default `./.bourse/ideas.jsonl`, file mode 600) once it is scored, so the log survives restarts and grows across sessions. Turn that off with `BOURSE_IDEA_LOG=off`. With the four stub trading seats running all day the file grows by roughly 40 MB a day, so delete or rotate it when you no longer need it. Scorecards themselves start fresh when core restarts. Everything here is paper trading on live prices; none of it is financial advice or evidence that an agent will make money.
+
+## Replay
+
+Replay runs the trading seats over past candles so you can judge an agent (or a change to its model or mandate) in minutes instead of waiting days for live ideas to be scored.
+
+```jsonc
+// POST /replay
+{ "symbol": "BTC-USDT",      // BTC-USDT, ETH-USDT or SOL-USDT
+  "timeframe": "5m",         // 1m, 5m, 15m or 1h
+  "days": 7,                 // 1 to 30
+  "horizon": 3,              // candles between an idea and its outcome (1 to 96), default 3
+  "feeBps": 5,               // fee per side in basis points (0 to 100), default 5
+  "maxModelCalls": 60,       // per model seat (1 to 500), default 60
+  "roles": ["Quant / Signals"] }  // optional: default every trading seat
+```
+
+How it works, and the rules it keeps:
+
+- Core fetches the candles itself (Binance, then Coinbase) plus 24 hours before the window, so the first candle already has a 24h change. At most 50,000 candles.
+- **No look-ahead.** At candle *i* a seat sees the close of *i* and the 24h change computed from candles up to *i*, nothing else. The close `horizon` candles later is read only after the decision.
+- Each seat uses its **current** model, temperature, mandate and clip, so you can edit a seat in the drawer and replay it straight away. Seats whose model isn't an `ollama:`/`openrouter:` id run the stub rule and are labelled `stub rule (… not connected)`.
+- Every BUY/SELL idea is a fixed-horizon paper trade: in at the close it was made on, out `horizon` candles later, sized as live intents are sized, minus `feeBps` on both sides. No slippage, no compounding, no overlap limits. `hitRate` counts ideas that moved the right way; `winRate` counts trades that made money after fees; `maxDrawdown` is on the equity curve with each trade booked when it closes.
+- Model seats are sampled evenly across the window to stay within `maxModelCalls`. Model calls count towards the same daily caps as live calls (`OLLAMA_DAILY_CAP`, `OPENROUTER_DAILY_CAP`); paid OpenRouter models cost money. A failed model call is counted in `failed` and is **never** replaced by the stub rule, so a model's numbers are only ever its own.
+- One replay at a time. The last one is kept until core restarts.
+
+Replay results are a test on history, not a forecast and not financial advice.
 
 ## Paper state across restarts
 

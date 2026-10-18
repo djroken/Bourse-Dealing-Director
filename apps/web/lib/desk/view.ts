@@ -109,7 +109,7 @@ export interface DeskView {
 }
 
 const grpName: Array<[Filter, string]> = [["ALL", "ALL"], ["dir", "DIRECTION"], ["exec", "EXECUTION"], ["res", "RESEARCH"], ["risk", "RISK"]];
-const tabDefs: Array<[Tab, string]> = [["chat", "FLOOR CHAT"], ["approvals", "APPROVALS"], ["blotter", "BLOTTER"], ["scores", "SCORES"], ["console", "CONSOLE"]];
+const tabDefs: Array<[Tab, string]> = [["chat", "FLOOR CHAT"], ["approvals", "APPROVALS"], ["blotter", "BLOTTER"], ["scores", "SCORES"], ["replay", "REPLAY"], ["console", "CONSOLE"]];
 
 const pct = (r: number | null): string => (r === null ? "—" : Math.round(r * 100) + "%");
 const signedPct = (v: number | null): string => (v === null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(2) + "%");
