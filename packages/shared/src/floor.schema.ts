@@ -75,12 +75,43 @@ export const AgentChatMsgSchema = z.object({
   ts: z.number(),
 });
 
+/**
+ * A seat's paper track record. Ideas are scored against the price a fixed time later (hit rate) whether or not they were
+ * traded; fills, wins and drawdown come from the seat's paper book. USD amounts; rates are 0..1 or null before any data.
+ */
+export const AgentScorecardSchema = z.object({
+  type: z.literal('scorecard'),
+  agentId: z.string(),
+  role: z.string(),
+  name: z.string(),
+  model: z.string(),
+  ideas: z.number().int().nonnegative(),
+  holds: z.number().int().nonnegative(),
+  scored: z.number().int().nonnegative(),
+  hits: z.number().int().nonnegative(),
+  hitRate: z.number().min(0).max(1).nullable(),
+  avgReturnPct: z.number().nullable(),
+  fills: z.number().int().nonnegative(),
+  vetoes: z.number().int().nonnegative(),
+  notional: z.number().nonnegative(),
+  closes: z.number().int().nonnegative(),
+  wins: z.number().int().nonnegative(),
+  winRate: z.number().min(0).max(1).nullable(),
+  realized: z.number(),
+  pnl: z.number(),
+  peakPnl: z.number(),
+  maxDrawdown: z.number().nonnegative(),
+  updatedAt: z.number(),
+  ts: z.number(),
+});
+
 export type AgentLifecycle = z.infer<typeof AgentLifecycleSchema>;
 export type AgentIntent = z.infer<typeof AgentIntentSchema>;
 export type AgentDecision = z.infer<typeof AgentDecisionSchema>;
 export type AgentPnl = z.infer<typeof AgentPnlSchema>;
 export type AgentConfigMsg = z.infer<typeof AgentConfigMsgSchema>;
 export type AgentChatMsg = z.infer<typeof AgentChatMsgSchema>;
+export type AgentScorecard = z.infer<typeof AgentScorecardSchema>;
 
 export type FloorMsg =
   | z.infer<typeof AgentLifecycleSchema>
@@ -88,7 +119,8 @@ export type FloorMsg =
   | z.infer<typeof AgentDecisionSchema>
   | z.infer<typeof AgentPnlSchema>
   | z.infer<typeof AgentConfigMsgSchema>
-  | z.infer<typeof AgentChatMsgSchema>;
+  | z.infer<typeof AgentChatMsgSchema>
+  | z.infer<typeof AgentScorecardSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';

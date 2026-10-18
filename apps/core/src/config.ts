@@ -16,6 +16,10 @@ export interface CoreConfig {
   mcpToken?: string;
   /** Model calls per provider per UTC day (0 = unlimited). A runaway-loop guard; raise it if you want more. */
   modelDailyCap: { ollama: number; openrouter: number };
+  /** Append every scored idea to <dataDir>/ideas.jsonl, a training/eval log that survives restarts. Default on. */
+  ideaLog?: boolean;
+  /** Minutes after an idea that its outcome is measured. Default 15. */
+  scoreHorizonMin?: number;
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -39,6 +43,13 @@ function capOf(v: string | undefined, dflt: number): number {
   return n;
 }
 
+function horizonOf(v: string | undefined): number {
+  if (v === undefined || v.trim() === '') return 15;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 1 || n > 1440) throw new Error(`BOURSE_SCORE_HORIZON_MIN must be between 1 and 1440 minutes, got "${v}"`);
+  return n;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
   const port = Number(env.CORE_PORT ?? 4000);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -59,6 +70,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     mcpToken: pick(env, 'BOURSE_MCP_TOKEN'),
     ollamaHost: env.OLLAMA_HOST?.trim() || 'http://127.0.0.1:11434',
     modelDailyCap: { ollama: capOf(env.OLLAMA_DAILY_CAP, 0), openrouter: capOf(env.OPENROUTER_DAILY_CAP, 200) },
+    ideaLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_IDEA_LOG') ?? ''),
+    scoreHorizonMin: horizonOf(pick(env, 'BOURSE_SCORE_HORIZON_MIN')),
   };
 }
 

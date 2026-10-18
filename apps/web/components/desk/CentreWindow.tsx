@@ -109,6 +109,43 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
         </div>
       )}
 
+      {s.tab === "scores" && (
+        <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 14px", borderBottom: "1px solid var(--w05)" }}>
+            <span style={m(9.5, "0.06em", "var(--c7C8894)", { lineHeight: 1.5 })}>{v.scoresNote}</span>
+            {v.scores.length > 0 && (
+              <a className="hz-btn hz-btn--sm" href={v.exportUrl} download title="Every idea this session with what the price did next, as JSON Lines" style={{ flex: "none", textDecoration: "none" }}>
+                EXPORT IDEAS
+              </a>
+            )}
+          </div>
+          <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            {v.scores.length > 0 && (
+              <div className="hz-score-row hz-blotter-head hz-glass">
+                <div>AGENT</div><div>IDEAS</div><div>HIT RATE</div><div>AVG MOVE</div><div>FILLS</div><div>WIN RATE</div><div>P&amp;L</div><div>MAX DD</div>
+                <div style={{ textAlign: "right" }}>VETOES</div>
+              </div>
+            )}
+            {v.scores.map((r) => (
+              <div key={r.key} className="hz-score-row hz-blotter-body" data-testid="score-row">
+                <div style={{ minWidth: 0 }}>
+                  <div className="hz-ellipsis" style={{ color: r.tint, fontWeight: 600 }}>{r.name}</div>
+                  <div className="hz-ellipsis" style={m(8.5, "0.1em", "var(--c5D6873)", { marginTop: 2 })} title={r.model}>{r.sub} · {r.model}</div>
+                </div>
+                <div>{r.ideas}</div>
+                <div style={{ color: r.hitColor }}>{r.hit}</div>
+                <div style={{ color: r.avgColor }}>{r.avg}</div>
+                <div>{r.fills}</div>
+                <div>{r.win}</div>
+                <div style={{ color: r.pnlColor }}>{r.pnl}</div>
+                <div style={{ color: "var(--cFF7A7A)" }}>{r.dd}</div>
+                <div style={{ textAlign: "right" }}>{r.vetoes}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {s.tab === "console" && (
         <div style={{ ...m(11.5), flex: 1, minHeight: 0, overflowY: "auto", padding: "14px 16px", lineHeight: 1.75 }}>
           {v.logs.map((l) => (
