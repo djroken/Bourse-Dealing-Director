@@ -5,7 +5,7 @@ import { createEngine } from '../src/engine';
 import { buildServer } from '../src/server';
 
 const ORIGIN = 'http://localhost:3000';
-const config = { ...loadConfig({ CORE_PORT: '0', CORE_HOST: '127.0.0.1' }), feedIntervalMs: 60_000 };
+const config = { ...loadConfig({ CORE_PORT: '0', CORE_HOST: '127.0.0.1' }), feedIntervalMs: 60_000, persist: false, ideaLog: false };
 
 const canned: Record<string, unknown> = {
   'ticker/24hr?symbol=BTCUSDT': { lastPrice: '100', priceChangePercent: '3' },

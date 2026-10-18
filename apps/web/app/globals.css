@@ -593,7 +593,7 @@ a:hover {
   border-color: rgba(255, 158, 44, 0.18);
 }
 .hz-tabs {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;

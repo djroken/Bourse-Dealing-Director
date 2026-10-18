@@ -3,7 +3,19 @@ import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
 import type { Advisor } from './models';
-import { createScorebook, type IdeaRecord, type Scorecard } from './scorecard';
+import { createScorebook, type IdeaRecord, type ScoreDump, type Scorecard } from './scorecard';
+
+/** What survives a restart: seat settings, every paper book (guests included) and the scorebook. Keyed by role. */
+export interface FloorSnapshot {
+  v: 1;
+  savedAt: number;
+  seats: Array<{ role: string; model: string; temperature: number; autonomy: AgentConfig['autonomy']; mandate: string; paused: boolean }>;
+  guests: string[];
+  books: Array<{ role: string; realized: number; positions: Array<{ symbol: string; qty: number; avg: number }>; day?: string; dayStartPnl?: number }>;
+  /** Agent ids in `scores` are mapped back to roles through this. */
+  ids: Record<string, string>;
+  scores: ScoreDump;
+}
 import { clampClip, withinLossStop } from './risk';
 
 /** The slice of a WebSocket the engine needs, so tests can use a plain fake. */
@@ -22,6 +34,9 @@ export interface FloorAgent {
   state: AgentState;
   /** Signed: losses are negative. Realised + unrealised on the paper book; this is what the loss stop reads. */
   dailyPnL: number;
+  /** UTC day (YYYY-MM-DD) the loss stop is counting, and the seat's total P&L when that day began. */
+  day?: string;
+  dayStartPnl?: number;
   book: Book;
   /** A guest agent connected over MCP. It trades only when it calls place_order; core's stub/model rules skip it. */
   external?: boolean;
@@ -353,7 +368,13 @@ export function createEngine(opts: EngineOptions = {}) {
   /** Mark one seat's paper book and tell clients. Halted seats are still marked: halting stops decisions, not prices. */
   const pnlMsg = (a: FloorAgent): FloorMsg => {
     const v = mark(a.book, lastPx);
-    a.dailyPnL = v.pnl;
+    // The loss stop counts today's P&L (UTC): a new day starts from wherever the book stands.
+    const today = new Date(now()).toISOString().slice(0, 10);
+    if (a.day !== today) {
+      a.day = today;
+      a.dayStartPnl = v.pnl;
+    }
+    a.dailyPnL = v.pnl - (a.dayStartPnl ?? 0);
     scores.mark(ident(a), v.pnl);
     return { type: 'pnl', agentId: a.id, role: a.config.role, pnl: v.pnl, exposure: v.exposure, positions: v.positions, ts: now() };
   };
@@ -402,6 +423,78 @@ export function createEngine(opts: EngineOptions = {}) {
       }
     },
 
+    /** Everything worth keeping across a restart. */
+    snapshot(): FloorSnapshot {
+      return {
+        v: 1,
+        savedAt: now(),
+        seats: agents.filter((a) => !a.external).map((a) => ({
+          role: a.config.role, model: a.config.model, temperature: a.config.temperature, autonomy: a.config.autonomy, mandate: a.config.mandate, paused: pausedSeats.has(a.id),
+        })),
+        guests: agents.filter((a) => a.external).map((a) => a.config.name),
+        books: agents.filter(hasBook).map((a) => ({
+          role: a.config.role, realized: a.book.realized, day: a.day, dayStartPnl: a.dayStartPnl,
+          positions: [...a.book.positions.entries()].map(([symbol, p]) => ({ symbol, qty: p.qty, avg: p.avg })),
+        })),
+        ids: Object.fromEntries(agents.map((a) => [a.id, a.config.role])),
+        scores: scores.dump(),
+      };
+    },
+
+    /**
+     * Put a snapshot back. Seats are matched by role, so a renamed or removed seat is skipped rather than guessed at.
+     * Call before any client connects or any tick arrives.
+     */
+    restore(snap: FloorSnapshot): void {
+      for (const name of snap.guests) registerGuest(name);
+      const byRole = (role: string) => agents.find((a) => norm(a.config.role) === norm(role));
+      for (const s of snap.seats) {
+        const a = byRole(s.role);
+        if (!a || a.external) continue;
+        a.config.model = s.model;
+        a.config.temperature = s.temperature;
+        a.config.autonomy = s.autonomy;
+        a.config.mandate = s.mandate;
+        if (s.paused) pausedSeats.add(a.id);
+        else pausedSeats.delete(a.id);
+        a.state = stateOf(a);
+      }
+      for (const b of snap.books) {
+        const a = byRole(b.role);
+        if (!a) continue;
+        a.book = newBook();
+        a.book.realized = b.realized;
+        for (const p of b.positions) if (p.qty !== 0 && p.avg > 0) a.book.positions.set(p.symbol, { qty: p.qty, avg: p.avg });
+        // Same UTC day: the loss stop keeps counting from where it was. Otherwise the next mark starts a new day.
+        a.day = b.day;
+        a.dayStartPnl = b.dayStartPnl;
+        a.dailyPnL = b.realized - (b.dayStartPnl ?? b.realized); // until the first tick marks the open positions
+      }
+      scores.load(snap.scores, (oldId) => {
+        const role = snap.ids[oldId];
+        return role ? byRole(role)?.id : undefined;
+      });
+      for (const a of agents) scoreSent.set(a.id, { at: Number.NEGATIVE_INFINITY, stamp: -1 }); // send fresh cards on the next tick
+      log.info(`restored ${snap.books.length} paper book(s), ${snap.scores.ideas.length} idea(s) and ${snap.guests.length} guest seat(s) from ${new Date(snap.savedAt).toISOString()}`);
+    },
+
+    /** Start every paper book and scorecard again from zero. Seat settings are kept. */
+    resetPaper(): void {
+      for (const a of agents) {
+        a.book = newBook();
+        a.dailyPnL = 0;
+        a.day = undefined;
+        a.dayStartPnl = undefined;
+      }
+      scores.reset();
+      for (const a of agents) broadcast(pnlMsg(a));
+      for (const c of scores.cards()) {
+        scoreSent.set(c.agentId, { at: now(), stamp: scores.rev(c.agentId) });
+        broadcast(scorecardMsg(c));
+      }
+      log.info('paper books and scorecards reset');
+    },
+
     /** Every seat's track record, and every idea this session with its outcome once known. */
     scorecards: (): Scorecard[] => scores.cards(),
     ideas: (): IdeaRecord[] => scores.ideas(),
@@ -430,7 +523,8 @@ export function createEngine(opts: EngineOptions = {}) {
         maxExposure: PAPER_CAPITAL * l.maxLeverage,
         exposure: v.exposure,
         pnl: v.pnl,
-        lossStopRemaining: Math.max(0, l.dailyLossStop + v.pnl),
+        todayPnl: a.dailyPnL,
+        lossStopRemaining: Math.max(0, l.dailyLossStop + a.dailyPnL),
       };
     },
     recentFloor: (n: number): FloorMsg[] => recent.slice(-Math.max(1, Math.min(n, 60))),

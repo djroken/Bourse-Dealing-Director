@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskState } from "@/lib/desk/state";
 import type { ChatRow, DeskView } from "@/lib/desk/view";
@@ -34,6 +34,34 @@ export function ChatLine({ r }: { r: ChatRow }) {
   );
 }
 
+/** Two clicks to wipe every paper book and scorecard: the first arms it, the second (within 4 s) does it. */
+function ResetPaper({ a }: { a: DeskActions }) {
+  const [armed, setArmed] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 4000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      className="hz-btn hz-btn--sm hz-btn--warn" style={{ flex: "none" }}
+      title="Start every agent's paper book and track record again from zero. Seat settings are kept."
+      onClick={() => {
+        if (!armed) {
+          setArmed(true);
+          setFailed(false);
+          return;
+        }
+        setArmed(false);
+        void a.resetPaper().then((ok) => setFailed(!ok));
+      }}
+    >
+      {failed ? "RESET FAILED" : armed ? "CLICK AGAIN TO RESET" : "RESET PAPER"}
+    </button>
+  );
+}
+
 export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a: DeskActions }) {
   const logRef = useRef<HTMLDivElement>(null);
   const events = s.seq.length;
@@ -52,8 +80,9 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
             </button>
           ))}
         </div>
-        <div style={{ flex: "0 1 auto", minWidth: 0, display: "flex", alignItems: "center", gap: 12, paddingLeft: 10 }}>
-          <span className="hz-ellipsis" style={m(9.5, "0.12em", "var(--c5D6873)", { whiteSpace: "nowrap" })}>{v.centerMeta}</span>
+        {/* The meta label gives way first (shrink weight 100), so the tabs keep their room. */}
+        <div style={{ flex: "0 100 auto", minWidth: 26, marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, paddingLeft: 10 }}>
+          <span className="hz-ellipsis" style={m(9.5, "0.12em", "var(--c5D6873)", { whiteSpace: "nowrap", minWidth: 0 })}>{v.centerMeta}</span>
           <button className="hz-x" aria-label="Close floor window" onClick={a.toggleCenter}>×</button>
         </div>
       </div>
@@ -113,6 +142,7 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
         <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
           <div style={{ flex: "none", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "9px 14px", borderBottom: "1px solid var(--w05)" }}>
             <span style={m(9.5, "0.06em", "var(--c7C8894)", { lineHeight: 1.5 })}>{v.scoresNote}</span>
+            {v.scores.length > 0 && <ResetPaper a={a} />}
             {v.scores.length > 0 && (
               <a className="hz-btn hz-btn--sm" href={v.exportUrl} download title="Every idea this session with what the price did next, as JSON Lines" style={{ flex: "none", textDecoration: "none" }}>
                 EXPORT IDEAS
@@ -138,7 +168,7 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
                 <div>{r.fills}</div>
                 <div>{r.win}</div>
                 <div style={{ color: r.pnlColor }}>{r.pnl}</div>
-                <div style={{ color: "var(--cFF7A7A)" }}>{r.dd}</div>
+                <div style={{ color: r.dd === "—" ? "var(--c7C8894)" : "var(--cFF7A7A)" }}>{r.dd}</div>
                 <div style={{ textAlign: "right" }}>{r.vetoes}</div>
               </div>
             ))}

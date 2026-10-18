@@ -7,6 +7,7 @@ import { applyCoreMsg, coreFloorUrl, onCoreConnected, onCoreLost, parseCoreMsg, 
 import { VENUE_STEP, persistable } from "./onboarding";
 import { fetchCandles, fetchEurUsd, fetchFundingRate, fetchQuotes, type Timeframe } from "./market";
 import { fetchSignals } from "./signals";
+import { CORE_URL } from "./secrets";
 import {
   type DeskState, type Fill, type Filter, type MobileTab, type Tab,
   bookScale, createInitialState, makeFills, seqPx, tickState, venuesReady,
@@ -326,6 +327,17 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
       setTab: (tab: Tab) => patch({ tab }),
       setMTab: (mTab: MobileTab) => patch({ mTab }),
       openQueue: () => patch({ centerOpen: true, tab: "approvals", mTab: "approvals" }),
+      /** Ask core to zero every paper book and scorecard. Core broadcasts the result; this only reports success. */
+      resetPaper: async (): Promise<boolean> => {
+        try {
+          const r = await fetch(CORE_URL + "/paper/reset", { method: "POST" });
+          if (!r.ok) return false;
+          patch((st) => ({ signals: {}, seq: st.seq.concat([{ sysText: "Paper books and scorecards reset by YOU. Seat settings kept.", t: Date.now() }]).slice(-80) }));
+          return true;
+        } catch {
+          return false;
+        }
+      },
       setFilter: (filter: Filter) => patch({ filter }),
       selectAgent: (sel: number | null) => {
         if (sel === null) flushCfg(); // APPLY / close: send anything still waiting
