@@ -12,7 +12,7 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "next": "16.4.0",
+    "next": "16.4.2",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -22,10 +22,10 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.4.0",
+    "eslint-config-next": "16.4.2",
     "tailwindcss": "^4",
     "typescript": "^5.9.3",
-    "vitest": "^5.0.4",
+    "vitest": "^5.0.5",
     "@playwright/test": "^1.64.1"
   },
   "description": "Bourse Desk: the trading-floor UI.",
