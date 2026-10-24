@@ -2,7 +2,6 @@ import { timingSafeEqual } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import type { Engine, FloorAgent } from './engine';
-import { TRADED_SYMBOLS } from './engine';
 
 /**
  * MCP server: lets an outside agent (Claude, OpenAI, OpenClaw, any MCP client) trade the paper book on live prices.
@@ -31,11 +30,13 @@ const fail = (reason: string) => ({ content: [{ type: 'text' as const, text: JSO
 
 export function createMcpServer(engine: Engine, guest: FloorAgent): McpServer {
   const server = new McpServer({ name: 'bourse-trading-floor', version: '0.1.0' });
-  const Symbol_ = z.enum(TRADED_SYMBOLS as [string, ...string[]]);
+  const symbols = engine.symbols();
+  const Symbol_ = z.enum(symbols as [string, ...string[]]);
+  const list = symbols.join(', ');
 
   server.registerTool(
     'get_quotes',
-    { description: 'Latest prices and 24h change for BTC-USDT, ETH-USDT and SOL-USDT, from the live feed core polls.', inputSchema: {} },
+    { description: `Latest price and change for every instrument on the floor (${list}), from the live feed core polls. Stocks carry marketOpen and their change is from the previous close.`, inputSchema: {} },
     async () => json({ quotes: engine.quotes(), note: 'Live prices. Orders fill on a paper book at the latest price; no real money moves.' }),
   );
 
@@ -55,9 +56,9 @@ export function createMcpServer(engine: Engine, guest: FloorAgent): McpServer {
     'place_order',
     {
       description:
-        'Place a paper market order at the latest live price. Size is in asset units (e.g. 0.01 BTC). Core rejects, and does not resize, any order over your max order size, over your exposure limit, after your daily loss stop, or while the floor is halted.',
+        'Place a paper market order at the latest live price. Size is in asset units (e.g. 0.01 BTC, or shares for a stock). Core rejects, and does not resize, any order over your max order size, over your exposure limit, after your daily loss stop, while the floor is halted, or for a stock while the US market is closed.',
       inputSchema: {
-        symbol: Symbol_.describe('BTC-USDT, ETH-USDT or SOL-USDT'),
+        symbol: Symbol_.describe(`One of ${list}`),
         side: z.enum(['BUY', 'SELL']),
         size: z.number().positive().finite().describe('Asset units, e.g. 0.01'),
       },

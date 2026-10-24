@@ -71,6 +71,10 @@ export interface TapeItem {
   tv: string;
   cb: string | null;
   seed: number;
+  /** Absent for the built-in crypto list. */
+  kind?: "crypto" | "stock";
+  /** Priced by Bourse Core's feed rather than fetched by the browser (stocks, and coins added with BOURSE_CRYPTO). */
+  core?: boolean;
 }
 export const TAPE: TapeItem[] = [
   { k: "BTCUSDT", label: "BTC/USDT", dp: 0, tv: "BINANCE:BTCUSDT", cb: "BTC-USD", seed: 96400 },
@@ -80,6 +84,29 @@ export const TAPE: TapeItem[] = [
   { k: "XRPUSDT", label: "XRP/USDT", dp: 4, tv: "BINANCE:XRPUSDT", cb: "XRP-USD", seed: 2.4 },
 ];
 export const LBL: Record<string, TapeItem> = Object.fromEntries(TAPE.map((t) => [t.k, t]));
+
+/**
+ * Instruments core adds on top of the built-in list (stocks, extra coins). A small runtime registry rather than state,
+ * because label/decimals lookups happen everywhere; `instrumentsRev` in DeskState changes whenever this does.
+ */
+export const EXTRA: TapeItem[] = [];
+/** Add instruments; returns the ones that were new. */
+export function addInstruments(items: TapeItem[]): TapeItem[] {
+  const added: TapeItem[] = [];
+  for (const it of items) {
+    if (Object.prototype.hasOwnProperty.call(LBL, it.k)) continue;
+    LBL[it.k] = it;
+    EXTRA.push(it);
+    added.push(it);
+  }
+  return added;
+}
+/** The built-in tape followed by core's extras. */
+export const allTape = (): TapeItem[] => TAPE.concat(EXTRA);
+/** Tests only: forget core's extras. */
+export function resetInstruments(): void {
+  for (const it of EXTRA.splice(0)) delete LBL[it.k];
+}
 export const PERP = (k: string): string => k.replace("USDT", "-PERP");
 
 export type ScriptEvent =

@@ -3,6 +3,7 @@ import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
 import type { Advisor } from './models';
+import { DEFAULT_CRYPTO, type Instrument } from './instruments';
 import { createScorebook, type IdeaRecord, type ScoreDump, type Scorecard } from './scorecard';
 
 /** What survives a restart: seat settings, every paper book (guests included) and the scorebook. Keyed by role. */
@@ -54,6 +55,8 @@ export interface Tick {
   price: number;
   change24h: number | null;
   source: string;
+  /** Stocks: false outside the US regular session. Agents don't decide and orders are refused while it's false. */
+  marketOpen?: boolean;
 }
 export interface Logger {
   info(msg: string): void;
@@ -67,7 +70,7 @@ export const InboundSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('place_order'),
     role: z.string().min(1).max(64),
-    symbol: z.enum(['BTC-USDT', 'ETH-USDT', 'SOL-USDT']),
+    symbol: z.string().min(1).max(16), // checked against the instrument list by the engine
     side: z.enum(['BUY', 'SELL']),
     size: z.number().positive().finite(),
   }),
@@ -85,7 +88,8 @@ export const InboundSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume_all') }),
 ]);
 
-export const TRADED_SYMBOLS = ['BTC-USDT', 'ETH-USDT', 'SOL-USDT'];
+/** The default list (crypto only). A running engine's list is `engine.instruments`, which may include stocks. */
+export const TRADED_SYMBOLS = DEFAULT_CRYPTO.map((i) => i.symbol);
 
 export interface EngineOptions {
   now?: () => number;
@@ -100,6 +104,8 @@ export interface EngineOptions {
   scoreHorizonMs?: number;
   /** Called once per idea when its outcome is known (the server appends these to a training log). */
   onIdeaResolved?: (rec: IdeaRecord) => void;
+  /** What the floor trades. Defaults to the built-in crypto list. */
+  instruments?: Instrument[];
 }
 
 /** Scorecards go out at most this often per seat, so a busy tick doesn't flood clients. */
@@ -130,6 +136,8 @@ export function createEngine(opts: EngineOptions = {}) {
   const cooldownMs = opts.cooldownMs ?? 15_000;
   const modelCooldownMs = opts.modelCooldownMs ?? 300_000;
   const advisor = opts.advisor;
+  const instruments: Instrument[] = (opts.instruments ?? DEFAULT_CRYPTO).map((i) => ({ ...i }));
+  const bySymbol = new Map(instruments.map((i) => [i.symbol, i]));
   const inFlight = new Set<string>();
   const log: Logger = opts.log ?? { info: () => {}, warn: () => {} };
 
@@ -299,7 +307,9 @@ export function createEngine(opts: EngineOptions = {}) {
       return { ok: false, reason: why };
     };
     if (agent.state !== 'running') return veto('Floor is halted: order not placed');
+    if (!bySymbol.has(symbol)) return veto(`${symbol} is not traded on this floor: order not placed`);
     if (price === undefined) return veto('No price for this symbol yet: order not placed');
+    if (lastTick.get(symbol)?.marketOpen === false) return veto('The US market is closed: order not placed');
     if (!(size > 0) || !Number.isFinite(size)) return veto('Size must be a positive number: order not placed');
     const { maxClip, maxLeverage, dailyLossStop } = agent.config.riskLimits;
     if (size * price > maxClip) return veto(`Order is over the $${maxClip} clip: not placed`);
@@ -320,6 +330,7 @@ export function createEngine(opts: EngineOptions = {}) {
   };
 
   const placeOrder = (role: string, symbol: string, side: 'BUY' | 'SELL', size: number): void => {
+    if (!bySymbol.has(symbol)) return; // like a malformed message: not something this floor trades
     const agent = agents.find((a) => norm(a.config.role) === norm(role) && a.config.trades && !a.external);
     if (agent) submitOrder(agent, symbol, side, size, 'Approved by operator');
   };
@@ -406,11 +417,12 @@ export function createEngine(opts: EngineOptions = {}) {
 
     /** Called by the feed on every price tick. Only the symbol that moved is evaluated. */
     pushTick(symbol: string, tick: Tick): void {
-      if (!TRADED_SYMBOLS.includes(symbol)) return;
+      if (!bySymbol.has(symbol)) return;
       lastPx.set(symbol, tick.price);
       lastTick.set(symbol, { ...tick, ts: now() });
       scores.tick(symbol, tick.price);
-      for (const a of agents) evaluate(a, symbol, tick);
+      // A closed market still marks the books, but nobody decides on a price that isn't moving.
+      if (tick.marketOpen !== false) for (const a of agents) evaluate(a, symbol, tick);
       for (const a of agents) if (hasBook(a)) broadcast(pnlMsg(a));
       // Scorecards that changed since they were last sent, at most once per SCORECARD_EVERY_MS per seat.
       const t = now();
@@ -508,7 +520,14 @@ export function createEngine(opts: EngineOptions = {}) {
     registerGuest,
     submitOrder,
     post,
-    quotes: () => [...lastTick.entries()].map(([symbol, t]) => ({ symbol, price: t.price, change24h: t.change24h, source: t.source, ts: t.ts })),
+    quotes: () =>
+      [...lastTick.entries()].map(([symbol, t]) => ({
+        symbol, kind: bySymbol.get(symbol)?.kind ?? 'crypto', price: t.price, change24h: t.change24h, source: t.source, ts: t.ts,
+        ...(t.marketOpen === undefined ? {} : { marketOpen: t.marketOpen }),
+      })),
+    /** What this floor trades. */
+    instruments: (): Instrument[] => instruments.map((i) => ({ ...i })),
+    symbols: (): string[] => instruments.map((i) => i.symbol),
     positionsOf(a: FloorAgent) {
       const v = mark(a.book, lastPx);
       return { pnl: v.pnl, exposure: v.exposure, positions: v.positions.map((p) => ({ ...p, markPx: lastPx.get(p.symbol) ?? p.avgPx })) };

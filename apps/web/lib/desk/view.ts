@@ -3,7 +3,7 @@
 
 import {
   type Autonomy, type Grp, type Side,
-  APP_VERSION, LBL, PERP, POS, RUNTIME_NAMES, SCRIPT, TAPE, TINTS,
+  APP_VERSION, LBL, PERP, POS, RUNTIME_NAMES, SCRIPT, TINTS, allTape,
 } from "./data";
 import { cm, fmt, fmtQty, hms, money, path } from "./format";
 import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
@@ -89,6 +89,9 @@ export interface DeskView {
     /** No exchange answered: the candles are a labelled stand-in. */
     simulated: boolean;
     full: boolean;
+    /** Stocks: whether the US market is open, and that agents wait for it. Empty for crypto. */
+    marketNote: string;
+    isStock: boolean;
     signalsOn: boolean;
     /** What the SIGNALS layer is showing, or why it's empty. */
     signalNote: string;
@@ -135,11 +138,14 @@ export function buildView(s: DeskState): DeskView {
   const venueNames = ready.map((v) => v.name).join(", ");
   const runtimeName = RUNTIME_NAMES[setup.runtime] ?? RUNTIME_NAMES.hermes;
 
-  const tape: TapeCell[] = TAPE.map((t): TapeCell => {
-    const p = s.live[t.k];
+  const tape: TapeCell[] = allTape().map((t): TapeCell => {
+    const p = s.live[t.k] ?? { px: Number.NaN, chg: 0, vol: 0 };
+    const closed = t.kind === "stock" && s.market[t.k] === false;
+    const priced = Number.isFinite(p.px);
     return {
       key: t.k, sym: t.label, px: fmt(p.px, t.dp),
-      chg: (p.chg >= 0 ? "+" : "") + p.chg.toFixed(2) + "%", color: p.chg >= 0 ? UP : DOWN,
+      chg: !priced ? "—" : closed ? "CLOSED" : (p.chg >= 0 ? "+" : "") + p.chg.toFixed(2) + "%",
+      color: !priced || closed ? "var(--c6B7681)" : p.chg >= 0 ? UP : DOWN,
       active: s.chartSym === t.k, sel: t.k,
     };
   }).concat([{
@@ -248,7 +254,15 @@ export function buildView(s: DeskState): DeskView {
 
   const tf = s.chartTf;
   const loaded = s.kl[s.chartSym + "|" + tf];
-  const candles = loaded ?? simCandles(s.live[s.chartSym].px, TF_MS[tf], s.now);
+  const livePx = s.live[s.chartSym]?.px ?? Number.NaN;
+  // No candles yet: a labelled stand-in for the built-in coins; nothing at all for core's instruments until core answers.
+  const candles = loaded ?? (Number.isFinite(livePx) ? simCandles(livePx, TF_MS[tf], s.now) : []);
+  const chartInst = LBL[s.chartSym];
+  const isStock = chartInst?.kind === "stock";
+  const mkt = s.stocks?.market;
+  const marketNote = !isStock ? "" : s.market[s.chartSym] === false || mkt?.open === false
+    ? "US MARKET CLOSED" + (mkt?.nextOpen ? " · OPENS " + mkt.nextOpen.slice(0, 16).replace("T", " ") + " ET" : "") + " · AGENTS WAIT FOR THE OPEN"
+    : "US MARKET OPEN · PRICES FROM ALPACA (IEX)";
   const series = candles.map((c) => c.c).slice(0, -1).concat([s.live[s.chartSym].px]);
   const chartUp = series[series.length - 1] >= series[0];
   const symSignals = core ? (s.signals[s.chartSym] ?? []) : [];
@@ -269,7 +283,7 @@ export function buildView(s: DeskState): DeskView {
   const netQ = core
     ? onFloor.reduce((x, o) => x + (s.coreBook[o.i]?.positions.find((q) => q.k === s.chartSym)?.qty ?? 0), 0)
     : onFloor.reduce((x, o) => x + (POS[o.i] && POS[o.i]!.k === s.chartSym ? POS[o.i]!.q * scale : 0), 0);
-  const vol = s.live[s.chartSym].vol;
+  const vol = s.live[s.chartSym]?.vol ?? 0;
   const light = resolved === "light";
   const tvSrc =
     "https://s.tradingview.com/widgetembed/?frameElementId=bourse_tv&symbol=" + encodeURIComponent(LBL[s.chartSym].tv) +
@@ -364,13 +378,13 @@ export function buildView(s: DeskState): DeskView {
     centerMeta: (core ? "CORE" : "SIMULATED") + " · " + s.seq.length + " EVENTS",
     navStr: cm(capital + pnl), pnlStr: money(pnl), pnlColor: pnl >= 0 ? UP : DOWN,
     chart: {
-      label: LBL[s.chartSym].label, feedShort: s.feed, last: fmt(s.live[s.chartSym].px, LBL[s.chartSym].dp),
+      label: LBL[s.chartSym].label, feedShort: isStock ? "ALPACA" : s.feed, last: fmt(s.live[s.chartSym].px, LBL[s.chartSym].dp),
       color: chartUp ? UP : DOWN, path: path(series, 320, 190, false), area: path(series, 320, 190, true), tvSrc,
       netPos: (netQ >= 0 ? "+" : "") + fmtQty(netQ) + " " + s.chartSym.replace("USDT", ""),
       funding: s.funding === null ? "—" : (s.funding >= 0 ? "+" : "") + s.funding.toFixed(4) + "%",
       vol: vol ? cm(vol) : "—",
       tf, tfs: TIMEFRAMES.map((id) => ({ id, label: id.toUpperCase(), active: id === tf })),
-      geo, simulated: !loaded, full: s.chartFull, signalsOn: s.chartSignals, signalNote, signalRows,
+      geo, simulated: !loaded && candles.length > 0, full: s.chartFull, marketNote, isStock, signalsOn: s.chartSignals, signalNote, signalRows,
     },
     engineState: s.halted ? "HALTED BY OPERATOR" : core ? "CORE FLOOR" : "SIMULATED FLOOR",
     engineColor: s.halted ? DOWN : ACCENT,

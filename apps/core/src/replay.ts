@@ -1,4 +1,4 @@
-import { CRYPTO } from './feeds';
+import { CRYPTO, type CryptoFeed } from './feeds';
 import { momentumIntent, sizeIntent } from './engine';
 import type { Advisor, MarketContext } from './models';
 
@@ -96,7 +96,7 @@ export interface ReplayResult {
   from: number;
   to: number;
   candles: number;
-  source: 'binance' | 'coinbase';
+  source: string;
   /** What simply holding the symbol over the replay window returned, for context. */
   marketReturnPct: number;
   seats: SeatResult[];
@@ -118,8 +118,9 @@ export async function fetchHistory(
   from: number,
   to: number,
   isCancelled: () => boolean = () => false,
+  feeds: CryptoFeed[] = CRYPTO,
 ): Promise<{ candles: Candle[]; source: 'binance' | 'coinbase' }> {
-  const meta = CRYPTO.find((c) => c.display === symbol);
+  const meta = feeds.find((c) => c.display === symbol);
   if (!meta) throw new Error(`unknown symbol ${symbol}`);
   const step = REPLAY_TF_MS[tf];
   const clean = (cs: Candle[]) => {
@@ -146,6 +147,7 @@ export async function fetchHistory(
     throw new Error('no candles from binance');
   } catch (err) {
     if (err instanceof Error && err.message === 'cancelled') throw err;
+    if (!meta.coinbase) throw new Error('no historical candles from Binance, and this coin has no Coinbase market');
     const out: Candle[] = [];
     const span = 300 * step; // Coinbase returns at most 300 candles per request
     try {
@@ -182,9 +184,15 @@ const round = (n: number, dp: number) => Math.round(n * 10 ** dp) / 10 ** dp;
  * candle has a 24h change; candles before `startTs` are only ever used as history.
  */
 export async function runReplay(params: ReplayParams, seats: ReplaySeat[], candles: Candle[], startTs: number, opts: RunOptions = {}): Promise<Omit<ReplayResult, 'source'>> {
-  const tfMs = REPLAY_TF_MS[params.timeframe];
-  const per24h = Math.round(DAY / tfMs);
-  const first = Math.max(per24h, candles.findIndex((c) => c.t >= startTs));
+  // For each candle, the newest candle at least 24h older: "24h ago" by the clock, which also works for stocks,
+  // whose candles stop overnight and at weekends.
+  const backIdx: number[] = new Array(candles.length).fill(-1);
+  for (let i = 0, b = -1; i < candles.length; i++) {
+    while (b + 1 < i && candles[b + 1]!.t <= candles[i]!.t - DAY) b++;
+    backIdx[i] = b >= 0 && candles[b]!.t <= candles[i]!.t - DAY ? b : -1;
+  }
+  let first = candles.findIndex((c, i) => c.t >= startTs && backIdx[i]! >= 0);
+  if (first < 0) first = candles.length;
   const last = candles.length - 1 - params.horizon; // the last candle whose outcome is known
   const evalIdx: number[] = [];
   for (let i = first; i <= last; i++) evalIdx.push(i);
@@ -211,7 +219,7 @@ export async function runReplay(params: ReplayParams, seats: ReplaySeat[], candl
       if (opts.isCancelled?.()) throw new Error('cancelled');
       const i = evalIdx[k]!;
       const now = candles[i]!;
-      const back = candles[i - per24h];
+      const back = backIdx[i]! >= 0 ? candles[backIdx[i]!] : undefined;
       // Only candles up to i: this is everything the seat is allowed to know.
       const change24h = back ? round(((now.c - back.c) / back.c) * 100, 2) : null;
       r.evaluated += 1;
@@ -320,7 +328,12 @@ export interface ReplayJob {
 }
 
 export interface ReplayRunnerDeps {
+  /** Crypto history straight from the exchanges. Ignored for symbols `history` handles. */
   fetchJson: FetchJson;
+  /** Optional: history for a symbol (core uses this for stocks). Return null to fall back to `fetchJson`. */
+  history?: (symbol: string, tf: ReplayTf, from: number, to: number, isCancelled: () => boolean) => Promise<{ candles: Candle[]; source: string } | null>;
+  /** Extra history to fetch before the window. Default 24h; stocks need more to cover weekends. */
+  warmupMs?: (symbol: string) => number;
   now: () => number;
   advisor?: Advisor;
   /** The seats to replay, built from the engine's current settings when the job starts. */
@@ -357,9 +370,11 @@ export function createReplayRunner(deps: ReplayRunnerDeps) {
       job = j;
       void (async () => {
         try {
-          // 24h of extra history before the window, so the first candle already has a 24h change.
-          const { candles, source } = await fetchHistory(deps.fetchJson, params.symbol, params.timeframe, startTs - DAY, to, () => cancelled);
-          if (candles.length < Math.round(DAY / REPLAY_TF_MS[params.timeframe]) + params.horizon + 2) throw new Error('not enough history for this window');
+          // Extra history before the window, so the first candle already has a 24h change.
+          const from = startTs - (deps.warmupMs?.(params.symbol) ?? DAY);
+          const got = (await deps.history?.(params.symbol, params.timeframe, from, to, () => cancelled)) ?? (await fetchHistory(deps.fetchJson, params.symbol, params.timeframe, from, to, () => cancelled));
+          const { candles, source } = got;
+          if (candles.length < params.horizon + 2 || !candles.some((c) => c.t >= startTs)) throw new Error('not enough history for this window');
           j.status = 'running';
           const res = await runReplay(params, seats, candles, startTs, {
             advisor: deps.advisor,

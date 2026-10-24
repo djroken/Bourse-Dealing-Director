@@ -13,6 +13,9 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | `BOURSE_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64). Enables the secret store. `pnpm --filter core keygen` makes one. |
 | `BOURSE_MCP_TOKEN` | unset | 16+ random characters. Switches on `/mcp` for guest agents. |
 | `BOURSE_DATA_DIR` | `.bourse` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
+| `BOURSE_CRYPTO` | unset | Extra coins with a Binance USDT market, comma-separated (e.g. `DOGE,ADA`), on top of BTC, ETH, SOL, BNB, XRP. Up to 12. |
+| `BOURSE_STOCKS` | `SPY,AAPL,NVDA,TSLA` | US tickers to trade, when an Alpaca key is set. Up to 12. |
+| `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY` | unset | Alpaca market-data key (free paper account). Or save them in Setup as `data.alpaca.key` / `data.alpaca.secret`. Read-only use: core never places an Alpaca order. |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
 
 ## HTTP
@@ -34,6 +37,8 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/replay/:id` | That job: `status` (`fetching`, `running`, `done`, `failed`, `cancelled`), `progress` 0..1, `params`, `result` |
 | DELETE | `/replay/:id` | Cancel a running replay |
 | GET | `/replay/:id/ideas.jsonl` | Every idea of a finished replay with its outcome and P&L, as JSON Lines |
+| GET | `/instruments` | `{ instruments: [{ symbol, kind, label, dp, tv, … }], stocks: { enabled, keySet, needsRestart, market } }`. See [Markets](#markets) |
+| GET | `/candles?symbol=AAPL&tf=5m` | Up to 120 candles for a **stock** (`tf` 1m, 5m, 15m, 1h, 4h, 1d), for the Desk's chart. Crypto candles come from the exchanges directly |
 | GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
 | PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
 | DELETE | `/secrets/:id` | Removes it, `404` if absent |
@@ -171,13 +176,24 @@ A fill is matched to the newest unfilled idea from the same seat, symbol and sid
 
 Each idea is also appended to `<BOURSE_DATA_DIR>/ideas.jsonl` (default `./.bourse/ideas.jsonl`, file mode 600) once it is scored, so the log survives restarts and grows across sessions. Turn that off with `BOURSE_IDEA_LOG=off`. With the four stub trading seats running all day the file grows by roughly 40 MB a day, so delete or rotate it when you no longer need it. Scorecards themselves start fresh when core restarts. Everything here is paper trading on live prices; none of it is financial advice or evidence that an agent will make money.
 
+## Markets
+
+The floor trades whatever `GET /instruments` lists. Everything (feed, agents, approvals, MCP, replay, the Desk's tape) uses that one list.
+
+- **Crypto**, always on, no key: BTC, ETH, SOL, BNB and XRP against USDT, plus any coins in `BOURSE_CRYPTO`. Quotes from Binance, with Coinbase as a fallback (BNB has no Coinbase market, so no fallback). Funding from Binance futures or Hyperliquid.
+- **US stocks**, when an Alpaca market-data key is configured (a free Alpaca paper account gives you one). Default list `SPY, AAPL, NVDA, TSLA`, or set `BOURSE_STOCKS`. Quotes come from Alpaca's free IEX feed every poll; a stock's "24h change" is the change from the previous session's close, the way stock moves are quoted. Sizes are in shares (fractional is fine on paper).
+  - Agents only decide on a stock while the US market is in its regular session (Alpaca's clock, which knows holidays; regular hours Monday to Friday 09:30–16:00 New York if the clock can't be reached). Orders for a stock are refused while the market is closed. Books keep marking either way.
+  - Core decides the list at start: if you save an Alpaca key in Setup while core is running, restart core to add the stocks (`/instruments` reports `needsRestart`).
+  - Core only reads market data from Alpaca. There is no order route to Alpaca or anywhere else.
+- **FX is not tradeable yet.** The free no-key source (the ECB, via Frankfurter) publishes one rate a day, which is fine as a reference and useless for trading; those rates still appear on the feed as `USD-EUR`, `USD-GBP`, `USD-JPY`.
+
 ## Replay
 
 Replay runs the trading seats over past candles so you can judge an agent (or a change to its model or mandate) in minutes instead of waiting days for live ideas to be scored.
 
 ```jsonc
 // POST /replay
-{ "symbol": "BTC-USDT",      // BTC-USDT, ETH-USDT or SOL-USDT
+{ "symbol": "BTC-USDT",      // any instrument on the floor (GET /instruments), stocks included
   "timeframe": "5m",         // 1m, 5m, 15m or 1h
   "days": 7,                 // 1 to 30
   "horizon": 3,              // candles between an idea and its outcome (1 to 96), default 3
@@ -188,7 +204,7 @@ Replay runs the trading seats over past candles so you can judge an agent (or a 
 
 How it works, and the rules it keeps:
 
-- Core fetches the candles itself (Binance, then Coinbase) plus 24 hours before the window, so the first candle already has a 24h change. At most 50,000 candles.
+- Core fetches the candles itself (crypto: Binance, then Coinbase; stocks: Alpaca bars) plus history before the window (24 hours for crypto, 4 days for stocks to cover weekends), so the first candle already has a 24h change. "24h ago" is by the clock, so it works across overnight and weekend gaps. At most 50,000 candles.
 - **No look-ahead.** At candle *i* a seat sees the close of *i* and the 24h change computed from candles up to *i*, nothing else. The close `horizon` candles later is read only after the decision.
 - Each seat uses its **current** model, temperature, mandate and clip, so you can edit a seat in the drawer and replay it straight away. Seats whose model isn't an `ollama:`/`openrouter:` id run the stub rule and are labelled `stub rule (… not connected)`.
 - Every BUY/SELL idea is a fixed-horizon paper trade: in at the close it was made on, out `horizon` candles later, sized as live intents are sized, minus `feeBps` on both sides. No slippage, no compounding, no overlap limits. `hitRate` counts ideas that moved the right way; `winRate` counts trades that made money after fees; `maxDrawdown` is on the equity curve with each trade booked when it closes.
@@ -232,7 +248,7 @@ or with Claude Code: `claude mcp add --transport http bourse http://127.0.0.1:40
 
 | Tool | What it does |
 |---|---|
-| `get_quotes` | Latest price and 24h change for BTC-USDT, ETH-USDT, SOL-USDT |
+| `get_quotes` | Latest price and change for every instrument on the floor; stocks carry `marketOpen` |
 | `get_positions` | Your positions and P&L, marked to the latest price |
 | `get_risk` | Your limits, how much you have used, whether the floor is halted |
 | `place_order` | Paper market order `{symbol, side, size}` (size in asset units) at the latest price |

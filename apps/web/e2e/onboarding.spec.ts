@@ -21,7 +21,7 @@ test("opens on first run and walks through all six steps", async ({ page, errors
 
   await next(page);
   await expect(onb).toContainText("STEP 03 OF 06");
-  await expect(onb.locator(".hz-onb-card")).toHaveCount(9);
+  await expect(onb.locator(".hz-onb-card")).toHaveCount(10);
 
   await next(page);
   await expect(onb).toContainText("STEP 04 OF 06");

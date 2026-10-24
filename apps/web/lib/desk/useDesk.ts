@@ -7,6 +7,8 @@ import { applyCoreMsg, coreFloorUrl, onCoreConnected, onCoreLost, parseCoreMsg, 
 import { VENUE_STEP, persistable } from "./onboarding";
 import { fetchCandles, fetchEurUsd, fetchFundingRate, fetchQuotes, type Timeframe } from "./market";
 import { fetchSignals } from "./signals";
+import { coreFeedUrl, fetchCoreCandles, fetchInstruments, parseCorePrice } from "./instruments";
+import { addInstruments } from "./data";
 import { CORE_URL } from "./secrets";
 import {
   type DeskState, type Fill, type Filter, type MobileTab, type Tab,
@@ -202,6 +204,67 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
     };
   }, [patch, coreEnabled]);
 
+  // ---- core's instruments and price feed ----------------------------------
+  // Stocks and extra coins exist only in core, so their list and prices come from core while it's connected.
+  useEffect(() => {
+    if (s.core !== "live") return;
+    let stop = false;
+    const load = () =>
+      void fetchInstruments().then((got) => {
+        if (stop || !got) return;
+        const added = addInstruments(got.items);
+        patch((st) => {
+          const out: Partial<DeskState> = { stocks: got.stocks };
+          if (added.length) {
+            const live = { ...st.live };
+            const ref = { ...st.ref };
+            for (const it of added) {
+              live[it.k] = live[it.k] ?? { px: Number.NaN, chg: 0, vol: 0 };
+              ref[it.k] = ref[it.k] ?? Number.NaN;
+            }
+            Object.assign(out, { live, ref, instrumentsRev: st.instrumentsRev + 1 });
+          }
+          return out;
+        });
+      });
+    load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [s.core, patch]);
+
+  useEffect(() => {
+    if (s.core !== "live") return;
+    let ws: WebSocket | null = null;
+    try {
+      ws = new WebSocket(coreFeedUrl());
+    } catch {
+      return;
+    }
+    ws.onmessage = (ev) => {
+      let raw: unknown;
+      try {
+        raw = JSON.parse(String(ev.data));
+      } catch {
+        return;
+      }
+      const p = parseCorePrice(raw);
+      if (!p || !LBL[p.k]?.core) return; // the built-in coins keep the browser's own feed
+      patch((st) => {
+        const prev = st.live[p.k];
+        const out: Partial<DeskState> = {
+          live: { ...st.live, [p.k]: { px: p.px, chg: p.chg ?? prev?.chg ?? 0, vol: prev?.vol ?? 0 } },
+        };
+        if (!Number.isFinite(st.ref[p.k] ?? Number.NaN)) out.ref = { ...st.ref, [p.k]: p.px };
+        if (p.marketOpen !== undefined && st.market[p.k] !== p.marketOpen) out.market = { ...st.market, [p.k]: p.marketOpen };
+        return out;
+      });
+    };
+    return () => ws?.close();
+  }, [s.core, patch]);
+
   // ---- market data ---------------------------------------------------------
   const symRef = useRef(s.chartSym);
   const tfRef = useRef<Timeframe>(s.chartTf);
@@ -214,15 +277,18 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
   // Loaders are promise chains (not async bodies) so state only changes in callbacks, never synchronously in an effect.
   const loadFunding = useCallback(() => {
     fundingAt.current = Date.now();
-    void fetchFundingRate(symRef.current).then((rate) => {
-      if (rate !== null) patch({ funding: rate });
+    const sym = symRef.current;
+    if (LBL[sym]?.kind === "stock") return patch({ funding: null }); // stocks have no funding rate
+    void fetchFundingRate(sym).then((rate) => {
+      if (rate !== null && symRef.current === sym) patch({ funding: rate });
     });
   }, [patch]);
 
   const loadCloses = useCallback(() => {
     const sym = symRef.current;
     const tf = tfRef.current;
-    void fetchCandles(sym, tf).then((cs) => {
+    const get = LBL[sym]?.kind === "stock" ? fetchCoreCandles(sym, tf) : fetchCandles(sym, tf);
+    void get.then((cs) => {
       if (cs && cs.length > 2) patch((st) => ({ kl: { ...st.kl, [sym + "|" + tf]: cs } }));
     });
   }, [patch]);
@@ -343,7 +409,7 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
         if (sel === null) flushCfg(); // APPLY / close: send anything still waiting
         patch({ sel });
       },
-      selectSym: (chartSym: string) => patch({ chartSym }),
+      selectSym: (chartSym: string) => patch({ chartSym, funding: null }),
       setChartSrc: (chartSrc: "tv" | "native") => patch({ chartSrc }),
       setChartTf: (chartTf: Timeframe) => patch({ chartTf }),
       toggleChartFull: () => patch((st) => ({ chartFull: !st.chartFull })),
