@@ -5,6 +5,7 @@ import {
 import { walk } from "./format";
 import type { Candle, FeedName, Quote, Timeframe } from "./market";
 import type { Signal } from "./signals";
+import type { StocksStatus } from "./instruments";
 import { DEFAULT_GLASS_ALPHA, type ThemeName } from "./theme";
 
 export type Tab = "chat" | "approvals" | "blotter" | "scores" | "replay" | "console";
@@ -100,6 +101,12 @@ export interface DeskState {
   chartSignals: boolean;
   /** Agents' ideas from core, by desk symbol. Empty while core isn't connected. */
   signals: Record<string, Signal[]>;
+  /** Bumped when core adds instruments to the tape (see addInstruments in data.ts). */
+  instrumentsRev: number;
+  /** US stocks: whether core has them, and the market clock. Null until core answers. */
+  stocks: StocksStatus | null;
+  /** Per desk key, whether that stock's market is open (absent for crypto). */
+  market: Record<string, boolean>;
   live: Record<string, Quote>;
   ref: Record<string, number>;
   /** Candles by `${symbol}|${timeframe}`, oldest first. */
@@ -156,7 +163,7 @@ export function createInitialState(now: number): DeskState {
     centerOpen: true, tab: "chat", mTab: "floor", sel: null, filter: "ALL", draft: "", halted: false,
     setup: { ...DEFAULT_SETUP, on: { ...DEFAULT_SETUP.on }, vals: {}, agentsOn: DEFAULT_SETUP.agentsOn.slice() },
     mode: "demo", confirmLive: false, liveNotice: false, setupNotice: false, onbStep: 0,
-    chartSrc: "tv", chartSym: "BTCUSDT", chartTf: "5m", chartFull: false, chartSignals: true, signals: {},
+    chartSrc: "tv", chartSym: "BTCUSDT", chartTf: "5m", chartFull: false, chartSignals: true, signals: {}, instrumentsRev: 0, stocks: null, market: {},
     live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false, core: "connecting", coreBook: {}, scores: {},
     seq, fills: makeFills(live, now),
     approvals: [
@@ -193,7 +200,7 @@ export function tickState(s: DeskState, autoplay: boolean): Partial<DeskState> {
   const out: Partial<DeskState> = { now };
   let live = s.live;
   if (!s.gotLive) {
-    live = {};
+    live = { ...s.live }; // keep core's instruments; only the built-in tape drifts in simulation
     for (const t of TAPE) {
       const px = s.live[t.k].px * (1 + (Math.random() - 0.49) * 0.0012);
       live[t.k] = { px, chg: (px / t.seed - 1) * 100, vol: 0 };

@@ -808,6 +808,23 @@ a:hover {
   color: #0b0d10;
   font-weight: 600;
 }
+.hz-native-mkt {
+  position: absolute;
+  left: 6px;
+  top: 4px;
+  padding: 1px 5px;
+  border-radius: 2px;
+  background: rgba(255, 177, 61, 0.12);
+  color: var(--cFFB13D);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  pointer-events: none;
+}
+.hz-native-mkt[data-open="true"] {
+  background: rgba(62, 207, 142, 0.1);
+  color: var(--c3ECF8E);
+}
 .hz-native-sim {
   position: absolute;
   left: 6px;

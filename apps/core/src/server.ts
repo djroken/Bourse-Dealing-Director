@@ -8,12 +8,15 @@ import type { CoreConfig } from './config';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { MCP_AGENT_HEADER, createMcpServer, tokenOk } from './mcp';
 import { createAdvisor } from './models';
-import { TRADED_SYMBOLS, createEngine, type Engine, type Logger } from './engine';
+import { createEngine, type Engine, type Logger } from './engine';
 import type { IdeaRecord } from './scorecard';
 import { loadSnapshot, saveSnapshot } from './persist';
 import { createReplayRunner, type ReplayTf } from './replay';
 import { z } from 'zod';
-import { fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
+import { cryptoFeeds, fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from './feeds';
+import { buildInstruments } from './instruments';
+import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
+import { fetchHistory } from './replay';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
 export interface ServerDeps {
@@ -54,7 +57,21 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       .then(() => appendFile(ideaFile, JSON.stringify(rec) + '\n', { mode: 0o600 }))
       .catch((err: unknown) => server.log.warn(`could not write ${ideaFile}: ${err instanceof Error ? err.message : String(err)}`));
   };
-  const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea });
+  // ---- instruments: crypto always; US stocks when an Alpaca market-data key is configured ----------------------------
+  const secrets = deps.secrets ?? (config.masterKey ? openSecretStore({ file: join(config.dataDir, 'secrets.json'), key: parseMasterKey(config.masterKey) }) : undefined);
+  /** Read at call time, so a key saved in Setup is used by the next poll (adding stocks to the list still needs a restart). */
+  const alpacaKeys = (): AlpacaKeys | undefined => {
+    const key = secrets?.get('data.alpaca.key') ?? (process.env.ALPACA_API_KEY_ID?.trim() || undefined);
+    const secret = secrets?.get('data.alpaca.secret') ?? (process.env.ALPACA_API_SECRET_KEY?.trim() || undefined);
+    return key && secret ? { key, secret } : undefined;
+  };
+  const built = buildInstruments({ extraCrypto: config.extraCrypto, stocks: config.stocks, stocksEnabled: !!alpacaKeys() });
+  for (const w of built.warnings) server.log.warn(w);
+  const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments });
+  const instruments = engine.instruments();
+  const stockSymbols = instruments.filter((i) => i.kind === 'stock').map((i) => i.symbol);
+  const crypto = cryptoFeeds(instruments);
+  let clock: (MarketClock & { at: number }) | null = null;
   // ---- paper state across restarts --------------------------------------------------------------------------------
   const stateFile = join(config.dataDir, 'state.json');
   const persist = config.persist !== false;
@@ -105,9 +122,39 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.get('/feeds', async () => ({
     intervalMs: config.feedIntervalMs,
     symbols: [...lastBySymbol.keys()],
-    sources: ['binance', 'coinbase', 'frankfurter', 'hyperliquid'],
+    sources: ['binance', 'coinbase', 'frankfurter', 'hyperliquid', ...(stockSymbols.length ? ['alpaca'] : [])],
     lastUpdate,
   }));
+  /** What the floor trades, and whether US stocks are on (and if the market is open). The Desk builds its tape from this. */
+  server.get('/instruments', async () => ({
+    instruments,
+    stocks: {
+      enabled: stockSymbols.length > 0,
+      keySet: !!alpacaKeys(),
+      // A key saved after start is used for quotes straight away, but adding stocks to the list needs a restart.
+      needsRestart: stockSymbols.length === 0 && !!alpacaKeys(),
+      market: clock ? { open: clock.open, nextOpen: clock.nextOpen, nextClose: clock.nextClose, from: clock.from } : null,
+    },
+  }));
+  /** Candles for one stock, for the Desk's native chart (crypto candles come straight from the exchanges). */
+  server.get<{ Querystring: { symbol?: string; tf?: string } }>('/candles', async (req, reply) => {
+    const inst = instruments.find((i) => i.symbol === req.query.symbol);
+    const tf = req.query.tf ?? '5m';
+    const STEP: Record<string, number> = { '1m': 60_000, '5m': 300_000, '15m': 900_000, '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000 };
+    if (!inst || inst.kind !== 'stock') return reply.code(400).send({ error: 'only stocks on this floor are served here' });
+    if (!STEP[tf]) return reply.code(400).send({ error: 'tf must be one of 1m, 5m, 15m, 1h, 4h, 1d' });
+    const keys = alpacaKeys();
+    if (!keys) return reply.code(503).send({ error: 'no Alpaca key' });
+    const to = feedDeps.now();
+    // Markets are shut most of the week: ask for a window wide enough to hold 120 trading-hours candles.
+    const from = to - Math.max(7 * 86_400_000, STEP[tf]! * 120 * 5);
+    try {
+      const bars = await fetchStockBars(feedDeps.fetchJson, keys, inst.symbol, tf, from, to, { max: 20_000 });
+      return { symbol: inst.symbol, tf, candles: bars.slice(-120) };
+    } catch (err) {
+      return reply.code(502).send({ error: err instanceof Error ? err.message.slice(0, 160) : 'failed' });
+    }
+  });
   server.get('/agents', async () => engine.agents.map((a) => engine.summary(a)));
   server.get<{ Params: { id: string } }>('/agents/:id', async (req, reply) => {
     const a = engine.agents.find((x) => x.id === req.params.id);
@@ -118,7 +165,6 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.post('/agents/resume-all', async () => ({ ok: true, resumed: engine.resumeAll() }));
 
   // ---- secrets: write-only over HTTP. Values are never returned, only that they exist. -------------------------------
-  const secrets = deps.secrets ?? (config.masterKey ? openSecretStore({ file: join(config.dataDir, 'secrets.json'), key: parseMasterKey(config.masterKey) }) : undefined);
   const disabled = { error: 'secret store disabled: start core with BOURSE_MASTER_KEY set (pnpm --filter core keygen)' };
   // ---- MCP: guest agents trade their own paper book. Off unless BOURSE_MCP_TOKEN is set. Stateless: one server per request.
   const mcpHandler = async (req: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
@@ -154,6 +200,19 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   // ---- replay: run seats over past candles ---------------------------------------------------------------------------
   const replays = createReplayRunner({
     fetchJson: (url) => feedDeps.fetchJson(url),
+    history: async (symbol, tf, from, to, isCancelled) => {
+      const inst = instruments.find((i) => i.symbol === symbol);
+      if (inst?.kind === 'stock') {
+        const keys = alpacaKeys();
+        if (!keys) throw new Error('stocks need an Alpaca key');
+        const bars = await fetchStockBars(feedDeps.fetchJson, keys, symbol, tf, from, to, { isCancelled });
+        if (!bars.length) throw new Error(`no historical bars for ${symbol} from Alpaca`);
+        return { candles: bars.map((b) => ({ t: b.t, c: b.c })), source: 'alpaca' };
+      }
+      return fetchHistory((url) => feedDeps.fetchJson(url), symbol, tf, from, to, isCancelled, crypto);
+    },
+    // Stocks stop overnight and at weekends: fetch four days before the window so the first bar has a 24h-ago bar.
+    warmupMs: (symbol) => (instruments.find((i) => i.symbol === symbol)?.kind === 'stock' ? 4 * 86_400_000 : 86_400_000),
     now: () => Date.now(),
     advisor,
     seatsFor: (roles) => {
@@ -167,7 +226,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     },
   });
   const ReplayBody = z.object({
-    symbol: z.enum(TRADED_SYMBOLS as [string, ...string[]]),
+    symbol: z.string().min(1).max(16).refine((s) => engine.symbols().includes(s), { message: 'not an instrument on this floor' }),
     timeframe: z.enum(['1m', '5m', '15m', '1h']),
     days: z.number().int().min(1).max(30),
     horizon: z.number().int().min(1).max(96).default(3),
@@ -207,7 +266,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   /** Recent ideas for one symbol, oldest first: what the Desk draws on its chart. */
   server.get<{ Querystring: { symbol?: string; limit?: string } }>('/ideas', async (req, reply) => {
     const symbol = req.query.symbol;
-    if (symbol !== undefined && !TRADED_SYMBOLS.includes(symbol)) return reply.code(400).send({ error: `symbol must be one of ${TRADED_SYMBOLS.join(', ')}` });
+    if (symbol !== undefined && !engine.symbols().includes(symbol)) return reply.code(400).send({ error: `symbol must be one of ${engine.symbols().join(', ')}` });
     const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit ?? '200', 10) || 200));
     return engine.ideas().filter((r) => !symbol || r.symbol === symbol).slice(-limit);
   });
@@ -291,7 +350,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     lastBySymbol.set(msg.type === 'funding' ? `funding:${msg.symbol}` : msg.symbol, msg);
     const payload = JSON.stringify(msg);
     for (const ws of feedClients) if (ws.readyState === WebSocket.OPEN) ws.send(payload);
-    if (msg.type === 'price') engine.pushTick(msg.symbol, { price: msg.price, change24h: msg.change24h, source: msg.source });
+    if (msg.type === 'price') engine.pushTick(msg.symbol, { price: msg.price, change24h: msg.change24h, source: msg.source, ...(msg.marketOpen === undefined ? {} : { marketOpen: msg.marketOpen }) });
   };
 
   /** One poll, never overlapping the previous one. Exposed so tests can drive it. */
@@ -299,7 +358,18 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     if (polling) return;
     polling = true;
     try {
-      const msgs = await pollFeeds(feedDeps);
+      const msgs = await pollFeeds(feedDeps, crypto);
+      const keys = stockSymbols.length ? alpacaKeys() : undefined;
+      if (keys) {
+        try {
+          const t = feedDeps.now();
+          if (!clock || t - clock.at > 60_000) clock = { ...(await fetchClock(feedDeps.fetchJson, keys, t)), at: t };
+          const open = clock.open;
+          for (const q of await fetchStockQuotes(feedDeps.fetchJson, keys, stockSymbols, t)) msgs.push({ ...q, marketOpen: open });
+        } catch (err) {
+          server.log.warn(`stock quotes failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       for (const m of msgs) publish(m);
       if (msgs.length) lastUpdate = feedDeps.now();
     } catch (err) {

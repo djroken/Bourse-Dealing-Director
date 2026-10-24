@@ -22,6 +22,10 @@ export interface CoreConfig {
   scoreHorizonMin?: number;
   /** Keep paper books, scorecards and seat settings in <dataDir>/state.json across restarts. Default on. */
   persist?: boolean;
+  /** Extra crypto coins with a Binance USDT market, comma-separated (BOURSE_CRYPTO, e.g. "DOGE,ADA"). */
+  extraCrypto?: string;
+  /** US stock tickers (BOURSE_STOCKS). Only used when an Alpaca key is configured; default SPY,AAPL,NVDA,TSLA. */
+  stocks?: string;
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -75,6 +79,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     ideaLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_IDEA_LOG') ?? ''),
     scoreHorizonMin: horizonOf(pick(env, 'BOURSE_SCORE_HORIZON_MIN')),
     persist: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_PERSIST') ?? ''),
+    extraCrypto: pick(env, 'BOURSE_CRYPTO'),
+    stocks: pick(env, 'BOURSE_STOCKS'),
   };
 }
 

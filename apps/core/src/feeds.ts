@@ -1,4 +1,6 @@
-export type FeedSource = 'binance' | 'coinbase' | 'frankfurter' | 'hyperliquid';
+import { DEFAULT_CRYPTO, type Instrument } from './instruments';
+
+export type FeedSource = 'binance' | 'coinbase' | 'frankfurter' | 'hyperliquid' | 'alpaca';
 
 export interface PriceMsg {
   type: 'price';
@@ -7,6 +9,8 @@ export interface PriceMsg {
   change24h: number | null;
   source: FeedSource;
   ts: number;
+  /** Stocks only: whether the US market is in its regular session. Crypto never closes. */
+  marketOpen?: boolean;
 }
 export interface FundingMsg {
   type: 'funding';
@@ -20,11 +24,16 @@ export interface FundingMsg {
 }
 export type FeedMsg = PriceMsg | FundingMsg;
 
-export const CRYPTO: Array<{ binance: string; display: string; coinbase: string; coin: string }> = [
-  { binance: 'BTCUSDT', display: 'BTC-USDT', coinbase: 'BTC-USD', coin: 'BTC' },
-  { binance: 'ETHUSDT', display: 'ETH-USDT', coinbase: 'ETH-USD', coin: 'ETH' },
-  { binance: 'SOLUSDT', display: 'SOL-USDT', coinbase: 'SOL-USD', coin: 'SOL' },
-];
+/** The crypto feed's view of an instrument. */
+export interface CryptoFeed {
+  binance: string;
+  display: string;
+  coinbase: string | null;
+  coin: string;
+}
+export const cryptoFeeds = (list: Instrument[]): CryptoFeed[] =>
+  list.filter((i) => i.kind === 'crypto' && i.binance && i.coin).map((i) => ({ binance: i.binance!, display: i.symbol, coinbase: i.coinbase ?? null, coin: i.coin! }));
+export const CRYPTO: CryptoFeed[] = cryptoFeeds(DEFAULT_CRYPTO);
 export const FX_PAIRS = ['USD-EUR', 'USD-GBP', 'USD-JPY'];
 
 const BINANCE_SPOT = 'https://data-api.binance.vision/api/v3';
@@ -125,7 +134,8 @@ export interface FeedDeps {
 }
 
 /** One full poll. Each source degrades independently: a failure drops that source's messages, never the whole poll. */
-export async function pollFeeds(deps: FeedDeps): Promise<FeedMsg[]> {
+export async function pollFeeds(deps: FeedDeps, crypto: CryptoFeed[] = CRYPTO): Promise<FeedMsg[]> {
+  const CRYPTO = crypto;
   const ts = deps.now();
   const safe = async <T>(fn: () => Promise<T>, fallback: T): Promise<T> => {
     try {
@@ -139,11 +149,13 @@ export async function pollFeeds(deps: FeedDeps): Promise<FeedMsg[]> {
     CRYPTO.map(async (c) => {
       const fromBinance = await safe(async () => parseBinance24h(await deps.fetchJson(`${BINANCE_SPOT}/ticker/24hr?symbol=${c.binance}`), c.display, ts), null);
       if (fromBinance) return fromBinance;
+      if (!c.coinbase) return null;
+      const cb = c.coinbase;
       // Coinbase quotes USD, which stands in for USDT when Binance is unreachable (e.g. blocked regions).
       return safe(async () => {
         const [ticker, stats] = await Promise.all([
-          deps.fetchJson(`${COINBASE}/products/${c.coinbase}/ticker`),
-          deps.fetchJson(`${COINBASE}/products/${c.coinbase}/stats`),
+          deps.fetchJson(`${COINBASE}/products/${cb}/ticker`),
+          deps.fetchJson(`${COINBASE}/products/${cb}/stats`),
         ]);
         return parseCoinbase(ticker, stats, c.display, ts);
       }, null);

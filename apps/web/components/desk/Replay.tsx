@@ -7,6 +7,8 @@ import {
   startReplay, type ReplayForm, type ReplayJob,
 } from "@/lib/desk/replay";
 import { m } from "./ui";
+import { allTape } from "@/lib/desk/data";
+import { coreSym } from "@/lib/desk/signals";
 
 const norm = (r: string) => r.toUpperCase().replace(/\s+/g, " ").trim();
 const HORIZONS = [1, 3, 6, 12, 24];
@@ -59,6 +61,8 @@ export default function Replay({ s }: { s: DeskState }) {
   const modelOf = (role: string) => s.agents.find((a) => norm(a.role) === norm(role))?.model ?? "";
   const nameOf = (role: string) => s.agents.find((a) => norm(a.role) === norm(role))?.name ?? role;
   const n = candlesFor(form.timeframe, form.days);
+  // Everything on the tape (core's stocks and extra coins included); s.instrumentsRev changes when that list does.
+  const symbols = s.instrumentsRev >= 0 ? allTape().map((t) => coreSym(t.k)) : [...REPLAY_SYMBOLS];
   const modelSeats = form.roles.filter((r) => /^(ollama|openrouter|openrouter-free):/.test(modelOf(r))).length;
 
   if (!core) {
@@ -76,7 +80,7 @@ export default function Replay({ s }: { s: DeskState }) {
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-        <Field label="SYMBOL"><Seg label="Replay symbol" options={REPLAY_SYMBOLS} value={form.symbol} onChange={(symbol) => set({ symbol })} show={(x) => x.replace("-", "/")} /></Field>
+        <Field label="SYMBOL"><Seg label="Replay symbol" options={symbols} value={form.symbol} onChange={(symbol) => set({ symbol })} show={(x) => x.replace("-", "/")} /></Field>
         <Field label="CANDLES"><Seg label="Replay timeframe" options={REPLAY_TFS} value={form.timeframe} onChange={(timeframe) => set({ timeframe })} show={(x) => x.toUpperCase()} /></Field>
         <Field label="PERIOD"><Seg label="Replay period" options={REPLAY_DAYS} value={form.days} onChange={(days) => set({ days })} show={(d) => `${d}D`} /></Field>
         <Field label="SCORE AFTER"><Seg label="Replay horizon" options={HORIZONS} value={form.horizon} onChange={(horizon) => set({ horizon })} show={(h) => horizonLabel(form.timeframe, h)} /></Field>

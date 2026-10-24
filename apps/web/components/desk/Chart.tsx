@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { TAPE } from "@/lib/desk/data";
+import { allTape } from "@/lib/desk/data";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskState } from "@/lib/desk/state";
 import type { DeskView } from "@/lib/desk/view";
@@ -53,6 +53,8 @@ function NativeChart({ v, grid }: { v: DeskView; grid: boolean }) {
       ))}
       <span className="hz-native-last" style={{ top: `${g.lastYPct}%`, background: g.up ? "rgba(62,207,142,0.9)" : "rgba(255,122,122,0.9)" }}>{g.lastLabel}</span>
       {v.chart.simulated && <span className="hz-native-sim">SIMULATED CANDLES · NO EXCHANGE REACHABLE</span>}
+      {!v.chart.simulated && g.candles.length === 0 && <span className="hz-native-sim">WAITING FOR PRICES FROM BOURSE CORE</span>}
+      {v.chart.marketNote && <span className="hz-native-mkt" data-open={!/CLOSED/.test(v.chart.marketNote)}>{v.chart.marketNote}</span>}
     </div>
   );
 }
@@ -118,7 +120,7 @@ export function ChartFull({ s, v, a }: { s: DeskState; v: DeskView; a: DeskActio
     <div className="hz-chartfull hz-glass" role="dialog" aria-modal="true" aria-label={`${c.label} chart, full screen`}>
       <div className="hz-chartfull-head">
         <div className="hz-seg hz-seg--chart" data-size="lg" role="group" aria-label="Symbol">
-          {TAPE.map((t) => (
+          {allTape().map((t) => (
             <button key={t.k} data-on={s.chartSym === t.k} onClick={() => a.selectSym(t.k)}>{t.label}</button>
           ))}
         </div>

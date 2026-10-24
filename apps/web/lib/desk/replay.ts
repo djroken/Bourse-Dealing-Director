@@ -7,14 +7,15 @@ import { CORE_URL } from "./secrets";
 
 /** Seats that trade (a web test keeps this in step with core's roster). */
 export const TRADING_ROLES = ["Execution Trader", "Market Maker", "Quant / Signals", "Sentiment Desk"] as const;
-export const REPLAY_SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT"] as const;
+/** The built-in coins. The tab offers whatever is on the tape (core adds stocks and extra coins). */
+export const REPLAY_SYMBOLS = ["BTC-USDT", "ETH-USDT", "SOL-USDT", "BNB-USDT", "XRP-USDT"] as const;
 export const REPLAY_TFS = ["1m", "5m", "15m", "1h"] as const;
 export const REPLAY_DAYS = [1, 3, 7, 14, 30] as const;
 export type ReplayTf = (typeof REPLAY_TFS)[number];
 const TF_MIN: Record<ReplayTf, number> = { "1m": 1, "5m": 5, "15m": 15, "1h": 60 };
 
 export interface ReplayForm {
-  symbol: (typeof REPLAY_SYMBOLS)[number];
+  symbol: string;
   timeframe: ReplayTf;
   days: number;
   horizon: number;

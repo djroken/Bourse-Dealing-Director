@@ -29,7 +29,16 @@ export default function Header({ s, v, a }: Props) {
               className="hz-tape-cell"
               data-on={t.active}
               data-inert={t.sel === null}
+              aria-label={t.sel ? `${t.sym} ${t.px} ${t.chg}, show on chart` : undefined}
+              aria-current={t.active || undefined}
+              tabIndex={t.sel ? 0 : undefined}
               onClick={() => t.sel && a.selectSym(t.sel)}
+              onKeyDown={(e) => {
+                if (t.sel && (e.key === "Enter" || e.key === " ")) {
+                  e.preventDefault();
+                  a.selectSym(t.sel);
+                }
+              }}
             >
               <div style={m(9.5, "0.14em", "var(--c6B7681)", { whiteSpace: "nowrap" })}>{t.sym}</div>
               <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>

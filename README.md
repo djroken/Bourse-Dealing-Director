@@ -34,7 +34,8 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Approvals queue | **Working** | SUGGEST and APPROVE agents send trades to the queue; AUTO agents fill immediately (paper) |
 | Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets stay in memory unless you save them to core's encrypted store |
 | Encrypted key store (core) | **Working; the OpenRouter adapter reads from it** | AES-256-GCM at rest, write-only over HTTP. Needs `BOURSE_MASTER_KEY` |
-| Market prices and candles | **Real** | Fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed |
+| Market prices and candles | **Real** | Crypto fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed. Stocks and any extra coins come through core |
+| Markets | **Crypto working; US stocks working with a free Alpaca key; FX not yet** | BTC, ETH, SOL, BNB and XRP out of the box, plus any Binance coin you add with `BOURSE_CRYPTO`. Add a free Alpaca paper-account key in Setup (Market data → Alpaca) and restart core to trade SPY, AAPL, NVDA and TSLA (or your own `BOURSE_STOCKS`) on paper, with live quotes, charts and replay. Agents only act on stocks while the US market is open. FX has no free intraday source yet. See [docs/core-api.md](docs/core-api.md#markets) |
 | Floor chat, fills, approvals | **Core's stub agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule (not AI models); AUTO seats fill on the paper venue, SUGGEST/APPROVE seats send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
@@ -128,7 +129,8 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [ ] Anthropic, OpenAI and Gemini adapters
 - [x] Server-side encrypted key storage (the OpenRouter adapter reads its key from it)
 - [x] MCP server: outside agents trade their own paper account on live prices
-- [ ] More markets: stocks (Alpaca, IBKR) and FX alongside crypto
+- [x] More markets: more crypto, and US stocks through Alpaca market data
+- [ ] FX, and stocks beyond the US (needs an intraday data source)
 - [x] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
 - [x] Paper books, scorecards and seat settings survive restarts
 - [x] Replay: score agents on past candles in minutes, with no look-ahead
