@@ -89,8 +89,9 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                   {r.kind === "msg" && (
                     <>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                        <span style={m(10.5, "0.06em", r.tint, { fontWeight: 600 })}>{r.who}</span>
-                        <span style={m(9, undefined, "var(--c4E5862)")}>{r.time}</span>
+                        <span style={m(10.5, "0.06em", r.tint, { fontWeight: 600, flex: "none" })}>{r.who}</span>
+                        {r.role && <span className="hz-ellipsis" style={m(8.5, "0.08em", "var(--c5D6873)", { whiteSpace: "nowrap", minWidth: 0 })}>{r.role}</span>}
+                        <span style={m(9, undefined, "var(--c4E5862)", { flex: "none", marginLeft: "auto" })}>{r.time}</span>
                       </div>
                       <div style={{ fontSize: 14, lineHeight: 1.55, color: "var(--cC9D2DA)", textWrap: "pretty" }}>{r.text}</div>
                     </>
@@ -174,6 +175,20 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                   <span className="hz-ellipsis" style={m(9.5, undefined, "var(--c6B7681)", { whiteSpace: "nowrap" })}>{f.time} · {f.agent} · @ {f.px}</span>
                 </div>
                 <span style={m(12.5, undefined, f.pnlColor, { flex: "none" })}>{f.pnl}</span>
+              </div>
+            ))}
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", padding: "6px 2px 0" }}>
+              <span style={m(9.5, "0.18em", "var(--c98A3AD)")}>NEWS</span>
+              <span style={m(8.5, "0.12em", "var(--c7C8894)")}>{v.news.label}</span>
+            </div>
+            {v.news.empty && <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--c6B7681)", padding: "0 2px" }}>{v.news.empty}</div>}
+            {v.news.rows.slice(0, 10).map((n) => (
+              <div key={n.key} className="hz-mfill" style={{ flexDirection: "column", alignItems: "stretch", gap: 5 }} data-testid="m-news-row">
+                <span style={m(9, "0.12em", "var(--c7C8894)")}>{n.tag} · {n.age}</span>
+                {n.url
+                  ? <a className="hz-news-link" href={n.url} target="_blank" rel="noopener noreferrer nofollow" style={{ fontSize: 14, lineHeight: 1.45, color: "var(--cD5DCE2)" }}>{n.headline}</a>
+                  : <span style={{ fontSize: 14, lineHeight: 1.45, color: "var(--cD5DCE2)" }}>{n.headline}</span>}
+                <span style={m(9.5, undefined, "var(--c6B7681)")}>{n.foot}</span>
               </div>
             ))}
           </div>
