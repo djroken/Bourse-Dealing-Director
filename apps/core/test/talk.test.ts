@@ -4,7 +4,7 @@ import { AgentChatMsgSchema, AgentIntentSchema, AgentThinkingSchema, AgentUsageM
 import { loadConfig } from '../src/config';
 import { createEngine, type FloorSocket } from '../src/engine';
 import type { Advisor } from '../src/models';
-import { createTalk, parseTalk, type TalkCall } from '../src/talk';
+import { createTalk, parseMemory, parseTalk, type RoundMemory, type TalkCall } from '../src/talk';
 import { buildServer } from '../src/server';
 
 class FakeSocket implements FloorSocket {
@@ -178,6 +178,22 @@ describe('memory across rounds', () => {
     const opens = ws.of('chat').filter((m) => m.role === 'Dealing Director' && /Biggest moves/.test(String(m.text)));
     expect(String(opens[0]!.text)).not.toContain('Last round');
     expect(String(opens.at(-1)!.text)).toMatch(/Last round \(14:00 UTC\): "House view: BUY SOL-USDT/);
+  });
+});
+
+describe('memory survives a restart', () => {
+  it('rounds are handed out to be saved, read back (junk dropped), and the next round carries on from them', async () => {
+    const saved: RoundMemory[][] = [];
+    const first = floor();
+    const t1 = createTalk({ engine: first.engine, now: () => Date.UTC(2026, 9, 30, 14, 0), intervalMs: 0, onMemory: (m) => saved.push(m) });
+    await t1.runRound();
+    const onDisk = JSON.parse(JSON.stringify([{ junk: true }, ...saved.at(-1)!, { id: 'x', at: 'nope', said: [] }]));
+    expect(parseMemory(onDisk)).toHaveLength(1);
+    const second = floor();
+    const t2 = createTalk({ engine: second.engine, now: () => Date.UTC(2026, 9, 30, 15, 0), intervalMs: 0, initialMemory: onDisk });
+    expect(t2.status().remembered).toBe(1);
+    await t2.runRound();
+    expect(String(second.ws.of('chat').find((m) => m.role === 'Dealing Director')!.text)).toMatch(/Last round \(14:00 UTC\): "House view/);
   });
 });
 

@@ -17,7 +17,8 @@ import { cryptoFeeds, fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from '
 import { buildInstruments } from './instruments';
 import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
 import { fetchHistory } from './replay';
-import { createTalk, type TalkCall } from './talk';
+import { createTalk, type RoundMemory, type TalkCall } from './talk';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createCatalog } from './catalog';
 import { createLeague } from './league';
 import { createNewsDesk, fetchFeedText, type TextFetch } from './news';
@@ -264,9 +265,32 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       .header('Content-Disposition', 'attachment; filename="bourse-talk.jsonl"')
       .send(rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
   });
+  // The floor's last few rounds, kept across restarts with the rest of the paper state.
+  const memoryFile = join(config.dataDir, 'talk-memory.json');
+  const readMemory = (): unknown => {
+    if (!persist || !existsSync(memoryFile)) return [];
+    try {
+      return JSON.parse(readFileSync(memoryFile, 'utf8'));
+    } catch {
+      server.log.warn(`ignored ${memoryFile}: not readable JSON`);
+      return [];
+    }
+  };
+  const saveMemory = (m: RoundMemory[]): void => {
+    if (!persist) return;
+    try {
+      mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
+      writeFileSync(memoryFile + '.tmp', JSON.stringify(m), { mode: 0o600 });
+      renameSync(memoryFile + '.tmp', memoryFile);
+    } catch (err) {
+      server.log.warn(`could not save ${memoryFile}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
   const talk = createTalk({
     engine,
     log,
+    initialMemory: readMemory(),
+    onMemory: saveMemory,
     onCall: logCall,
     headlines: () => news.latest(),
     intervalMs: (config.talkMin ?? 15) * 60_000,
