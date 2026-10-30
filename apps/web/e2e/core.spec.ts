@@ -166,6 +166,39 @@ test("a custom model id typed in the drawer is sent to core", async ({ page }) =
   await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:meta-llama/llama-3.3-70b-instruct:free")).toBe(true);
 });
 
+test("the model picker lists core's free OpenRouter models, says when core has no key, and shows why a call failed", async ({ page }) => {
+  await page.route(/127\.0\.0\.1:4000\/models\/catalog/, (r) => r.fulfill({ json: {
+    openrouter: { keySet: false, error: null, fetchedAt: 1, free: [
+      { id: "openrouter-free:deepseek/deepseek-chat:free", name: "DeepSeek V3 (free)", context: 64000 },
+      { id: "openrouter-free:qwen/qwen3-coder:free", name: "Qwen3 Coder (free)", context: 262000 },
+    ] },
+    ollama: { host: "http://127.0.0.1:11434", reachable: false, models: [] },
+  } }));
+  const core = await mockCore(page);
+  await openDesk(page);
+  await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  await page.locator(".hz-agent", { hasText: "Pico Nandra" }).click();
+  const drawer = page.getByRole("dialog", { name: /Pico Nandra settings/ });
+  const picker = drawer.getByLabel("Model", { exact: true });
+  await expect(picker.locator('optgroup[label^="OpenRouter"]')).toHaveAttribute("label", "OpenRouter · free (2)");
+  await expect(picker.locator('optgroup[label^="OpenRouter"] option')).toHaveText(["DeepSeek V3 (free)", "Qwen3 Coder (free)"]);
+  await picker.selectOption("openrouter-free:deepseek/deepseek-chat:free");
+  await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:deepseek/deepseek-chat:free")).toBe(true);
+  await expect(drawer.getByTestId("model-key")).toContainText("core doesn't have it");
+  await expect(drawer.getByTestId("model-key")).toContainText(".env");
+
+  const custom = drawer.getByLabel("Custom model id");
+  await custom.fill("deepseek-chat");
+  await expect(drawer.getByRole("button", { name: "USE", exact: true })).toBeDisabled();
+  await expect(drawer).toContainText("Start with ollama:, openrouter-free: or openrouter:");
+  await custom.fill("openrouter-free:google/gemma-3-27b-it:free");
+  await drawer.getByRole("button", { name: "USE", exact: true }).click();
+  await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:google/gemma-3-27b-it:free")).toBe(true);
+
+  core.send({ type: "usage", agentId: "TKT-004", role: "Quant / Signals", callsToday: 0, tokensToday: 0, spendToday: 0, latencyMs: null, lastError: "no OpenRouter key: set one in Setup or OPENROUTER_API_KEY", ts: Date.now() });
+  await expect(drawer.getByTestId("model-error")).toHaveText("Last call failed: no OpenRouter key: set one in Setup or OPENROUTER_API_KEY");
+});
+
 test("a guest agent's trade and chat show up on the desk, labelled as a guest", async ({ page }) => {
   const core = await mockCore(page);
   await openDesk(page);

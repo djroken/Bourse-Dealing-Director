@@ -45,6 +45,8 @@ export interface SeedAgent {
 }
 export interface Agent extends SeedAgent {
   paused: boolean;
+  /** Why this seat's last model call failed, from core. Undefined/null when it worked or there was none. */
+  modelError?: string | null;
 }
 
 export const SEED_AGENTS: SeedAgent[] = [

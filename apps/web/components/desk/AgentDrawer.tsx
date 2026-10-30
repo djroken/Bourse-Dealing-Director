@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ALL_TOOLS, AUTONOMY, MODELS } from "@/lib/desk/data";
+import { customModelOk, fetchCatalog, keyLine, type ModelCatalog } from "@/lib/desk/models";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskView } from "@/lib/desk/view";
 import { m } from "./ui";
@@ -9,11 +11,79 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div style={m(9, "0.2em", "var(--c5D6873)")}>{children}</div>;
 }
 
+/** The seed's model names are labels for the stub rule; only ids with a provider prefix call a real model. */
+const STUB_LABELS = MODELS.filter((x) => !/^(ollama|openrouter|openrouter-free):/.test(x));
+
+/**
+ * Model picker. With core connected it offers what can really run: OpenRouter's free models (live list) and the models
+ * installed in Ollama, plus any id typed in. Without core, the simulated floor's labels.
+ */
+function ModelPicker({ v, a, model }: { v: DeskView; a: DeskActions; model: string }) {
+  const [cat, setCat] = useState<ModelCatalog | null>(null);
+  const [custom, setCustom] = useState("");
+  useEffect(() => {
+    if (!v.coreLive) return;
+    let live = true;
+    void fetchCatalog().then((c) => live && setCat(c));
+    return () => {
+      live = false;
+    };
+  }, [v.coreLive]);
+  const known = new Set([...(cat?.free ?? []).map((x) => x.id), ...(cat?.ollama ?? []).map((x) => x.id), ...MODELS]);
+  const key = keyLine(cat, model);
+  const use = () => {
+    const t = custom.trim();
+    if (customModelOk(t)) {
+      a.patchSel({ model: t.slice(0, 96) });
+      setCustom("");
+    }
+  };
+  const customBad = custom.trim() !== "" && !customModelOk(custom);
+  return (
+    <>
+      <select className="hz-select" value={model} aria-label="Model" onChange={(e) => a.patchSel({ model: e.target.value })}>
+        {!known.has(model) && <option value={model}>{model}</option>}
+        {v.coreLive && cat && (
+          <optgroup label={`OpenRouter · free${cat.free.length ? ` (${cat.free.length})` : cat.freeError ? " · list unavailable" : ""}`}>
+            {cat.free.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+            {!cat.free.length && <option value="openrouter-free:meta-llama/llama-3.3-70b-instruct:free">meta-llama/llama-3.3-70b-instruct:free</option>}
+          </optgroup>
+        )}
+        {v.coreLive && cat && cat.ollama.length > 0 && (
+          <optgroup label="Ollama on this machine">
+            {cat.ollama.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </optgroup>
+        )}
+        {(!v.coreLive || !cat) && (
+          <optgroup label="Models (through core)">
+            {MODELS.filter((x) => !STUB_LABELS.includes(x)).map((x) => <option key={x} value={x}>{x}</option>)}
+          </optgroup>
+        )}
+        <optgroup label={v.coreLive ? "No model: stub rule" : "Simulated floor labels"}>
+          {STUB_LABELS.map((x) => <option key={x} value={x}>{x}{v.coreLive ? " (stub rule)" : ""}</option>)}
+        </optgroup>
+      </select>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input
+          className="hz-select" aria-label="Custom model id" spellCheck={false} autoComplete="off" value={custom}
+          aria-invalid={customBad || undefined}
+          placeholder="Or type an id: openrouter-free:vendor/model:free"
+          onChange={(e) => setCustom(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") use(); }}
+          style={{ flex: 1, minWidth: 0 }}
+        />
+        <button className="hz-btn hz-btn--sm" disabled={!customModelOk(custom)} onClick={use}>USE</button>
+      </div>
+      {customBad && <div style={m(9.5, undefined, "var(--cFF7A7A)", { lineHeight: 1.5 })}>Start with ollama:, openrouter-free: or openrouter:, then the model id.</div>}
+      {key && <div data-testid="model-key" data-ok={key.ok} style={m(9.5, undefined, key.ok ? "var(--c3ECF8E)" : "var(--cFFB13D)", { lineHeight: 1.5 })}>{key.text}</div>}
+      {v.sel?.modelError && <div data-testid="model-error" role="status" style={m(9.5, undefined, "var(--cFF7A7A)", { lineHeight: 1.5 })}>Last call failed: {v.sel.modelError}</div>}
+    </>
+  );
+}
+
 export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
   const sel = v.sel;
   if (!sel) return null;
-  // Keep a custom/unknown model selectable instead of silently snapping to the first option.
-  const models = MODELS.includes(sel.model) ? MODELS : [sel.model, ...MODELS];
 
   return (
     <aside
@@ -37,15 +107,7 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 18 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <Label>MODEL</Label>
-          <select className="hz-select" value={sel.model} aria-label="Model" onChange={(e) => a.patchSel({ model: e.target.value })}>
-            {models.map((mo) => <option key={mo} value={mo}>{mo}</option>)}
-          </select>
-          <input
-            key={sel.model} className="hz-select" aria-label="Custom model id" spellCheck={false} autoComplete="off"
-            placeholder="Custom id: ollama:qwen3 · openrouter:vendor/model"
-            onKeyDown={(e) => { if (e.key === "Enter") { const t = e.currentTarget.value.trim(); if (t) a.patchSel({ model: t.slice(0, 96) }); } }}
-            onBlur={(e) => { const t = e.currentTarget.value.trim(); if (t) a.patchSel({ model: t.slice(0, 96) }); }}
-          />
+          <ModelPicker v={v} a={a} model={sel.model} />
           <div style={m(9.5, undefined, "var(--c6B7681)", { lineHeight: 1.5 })}>
             ollama: runs locally and is free. openrouter-free: only accepts :free models. openrouter: takes any model and may cost money. Model seats suggest only; they never trade on their own.
           </div>

@@ -1,5 +1,18 @@
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { isLoopback, loadConfig } from './config';
 import { buildServer } from './server';
+
+// A .env file in the repo root (or apps/core) is read at start-up, so keys like OPENROUTER_API_KEY live in one place
+// instead of being typed into every terminal. Variables already set in the environment win. .env is git-ignored.
+const here = dirname(fileURLToPath(import.meta.url)); // apps/core/src
+for (const f of [...new Set([resolve(here, '../../../.env'), resolve(here, '../.env')])]) {
+  if (existsSync(f)) {
+    process.loadEnvFile(f);
+    console.log(`read settings from ${f}`);
+  }
+}
 
 const config = loadConfig();
 let core: ReturnType<typeof buildServer>;

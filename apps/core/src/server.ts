@@ -18,6 +18,7 @@ import { buildInstruments } from './instruments';
 import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
 import { fetchHistory } from './replay';
 import { createTalk } from './talk';
+import { createCatalog } from './catalog';
 import { createNewsDesk, fetchFeedText, type TextFetch } from './news';
 import { VENUE_LABEL, alpacaPaper, binanceTestnet, httpFetch, type HttpFetch, type Venue, type VenueId } from './venues';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
@@ -217,6 +218,13 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.all('/mcp', mcpHandler);
 
   server.get('/models', async () => advisor.status());
+  const catalog = createCatalog({
+    getJson: (url) => feedDeps.fetchJson(url),
+    ollamaHost: config.ollamaHost,
+    openrouterKeySet: () => advisor.status().openrouter.keySet,
+  });
+  /** What the Desk's model picker offers: OpenRouter's free models and what's installed in Ollama, plus whether core has the OpenRouter key. */
+  server.get('/models/catalog', async () => catalog.get());
 
   // ---- scorecards and the idea log ---------------------------------------------------------------------------------
   // ---- floor conversation ------------------------------------------------------------------------------------------

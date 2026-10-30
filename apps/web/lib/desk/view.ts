@@ -58,6 +58,8 @@ export interface SelView {
   track: TrackView | null;
   /** What the TOKENS / SPEND / LATENCY boxes mean right now. */
   usageNote: string;
+  /** Why the seat's last model call failed, from core, or null. */
+  modelError: string | null;
 }
 
 export interface NewsView {
@@ -68,6 +70,8 @@ export interface NewsView {
 
 export interface DeskView {
   news: NewsView;
+  /** Connected to Bourse Core (the drawer offers core's model catalog). */
+  coreLive: boolean;
   isMobile: boolean;
   isLive: boolean;
   resolved: ResolvedTheme;
@@ -390,6 +394,7 @@ export function buildView(s: DeskState): DeskView {
     temp: selAgent.temp, tokens: selAgent.tokens, spend: selAgent.spend, latency: selAgent.latency,
     maxClip: selAgent.maxClip, leverage: selAgent.leverage, lossStop: selAgent.lossStop,
     autonomy: selAgent.autonomy, paused: selAgent.paused, tools: selAgent.tools, track,
+    modelError: core && isModelId(selAgent.model) ? selAgent.modelError ?? null : null,
     usageNote: !core
       ? "Sample figures: the simulated floor makes no model calls."
       : isModelId(selAgent.model)
@@ -422,6 +427,7 @@ export function buildView(s: DeskState): DeskView {
     : "";
 
   return {
+    coreLive: core,
     isMobile: s.vw < 760,
     isLive, resolved,
     clock: hms(s.now) + " UTC",

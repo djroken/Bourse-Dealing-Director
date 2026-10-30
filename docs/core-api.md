@@ -4,7 +4,7 @@
 
 > **Status: prototype.** Core has **no user accounts** (only `/mcp` needs a token) and **cannot place real-money orders**: approved orders can go to a broker's paper account (play money), never a live one. Seats run a momentum rule by default; a seat can instead be pointed at a model (see Real models), and outside agents can join over MCP. See the [README](../README.md) for the roadmap.
 
-Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by environment variable, see [`.env.example`](../.env.example):
+Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by environment variable, see [`.env.example`](../.env.example). A `.env` file in the repo root (or `apps/core`) is read at start-up; variables already set in the environment win:
 
 | Variable | Default | Meaning |
 |---|---|---|
@@ -107,7 +107,7 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 `chat` is a line of floor talk: a seat speaking in a [floor conversation](#floor-conversation) (`model` says which model wrote it, `stub: true` that the stub rule did), the owner's instruction echoed back (`agentId: "OWNER"`), or a guest agent (MCP `post_to_floor`, no `round`). Text is capped at 480 characters.
 
 ```jsonc
-{ "type": "usage", "agentId": "…", "role": "…", "callsToday": 12, "tokensToday": 18460, "spendToday": 0.0042, "latencyMs": 1830, "ts": 0 }
+{ "type": "usage", "agentId": "…", "role": "…", "callsToday": 12, "tokensToday": 18460, "spendToday": 0.0042, "latencyMs": 1830, "lastError": null, "ts": 0 }
 ```
 
 ```jsonc
@@ -116,7 +116,7 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 
 `news` is a headline from the [news feeds](#news), sent once when core first sees it. A new client receives the latest 20 on connect. `url` is `null` unless it is an http(s) link.
 
-`usage` is a model seat's metering for the UTC day: calls, prompt plus completion tokens, spend in USD (`0` on Ollama and free OpenRouter models, `null` if the provider didn't report a cost) and the latency of the last call. Sent on connect and at most once a second per seat. The Desk's drawer shows it as TOKENS TODAY, SPEND TODAY and LAST LATENCY. Stub seats have no usage.
+`usage` is a model seat's metering for the UTC day: calls, prompt plus completion tokens, spend in USD (`0` on Ollama and free OpenRouter models, `null` if the provider didn't report a cost) and the latency of the last call. Sent on connect and at most once a second per seat. `lastError` is why the seat's last model call failed (no key, unknown model, rate limit, daily cap), or `null`; it is sent as soon as it changes. The Desk's drawer shows it as TOKENS TODAY, SPEND TODAY and LAST LATENCY. Stub seats have no usage.
 
 An `intent` may carry `needsApproval`: `true` means it waits for the owner (every model seat's idea, and stub seats on SUGGEST or APPROVE), `false` means core is filling it itself (a stub seat on AUTO) and a `decision` follows.
 
@@ -166,6 +166,8 @@ Rules that hold whatever the model says:
 - **Throttled.** One call per seat and symbol per 5 minutes, never overlapping, and a daily cap per provider (`OPENROUTER_DAILY_CAP`, default 200; `OLLAMA_DAILY_CAP`, default unlimited; 0 = unlimited). Replies that arrive after a halt, pause or model change are dropped.
 
 `GET /models` returns `{ ollama: { host, used, cap }, openrouter: { keySet, used, cap } }` (never the key).
+
+`GET /models/catalog` is what the Desk's model picker offers: `{ openrouter: { keySet, free: [{ id, name, context }], error, fetchedAt }, ollama: { host, reachable, models: [{ id, name }] } }`. The free list comes from OpenRouter's public model list (no key needed to list), keeps only `:free` ids priced at zero, is prefixed `openrouter-free:` and is cached for an hour. Ollama's list is whatever is installed locally.
 
 ## Floor conversation
 

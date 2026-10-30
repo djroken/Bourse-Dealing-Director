@@ -17,7 +17,7 @@ export type CoreMsg =
   | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number; needsApproval?: boolean }
   | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
   | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean }
-  | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; ts: number }
+  | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; lastError?: string | null; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; venue?: BrokerId; ts: number }
   | ({ type: "scorecard"; ts: number } & Score)
@@ -70,7 +70,7 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
     const int = (v: unknown) => num(v) && v >= 0;
     if (!int(raw.callsToday) || !int(raw.tokensToday)) return null;
     if (!(raw.spendToday === null || int(raw.spendToday)) || !(raw.latencyMs === null || int(raw.latencyMs))) return null;
-    return { type: "usage", agentId, role, callsToday: raw.callsToday as number, tokensToday: raw.tokensToday as number, spendToday: raw.spendToday as number | null, latencyMs: raw.latencyMs as number | null, ts };
+    return { type: "usage", agentId, role, callsToday: raw.callsToday as number, tokensToday: raw.tokensToday as number, spendToday: raw.spendToday as number | null, latencyMs: raw.latencyMs as number | null, lastError: str(raw.lastError, 200) ? raw.lastError : null, ts };
   }
   if (raw.type === "config") {
     const rl = raw.riskLimits;
@@ -203,7 +203,7 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
     const tokens = m.tokensToday >= 1e6 ? (m.tokensToday / 1e6).toFixed(2) + "M" : m.tokensToday >= 1e3 ? (m.tokensToday / 1e3).toFixed(1) + "k" : String(m.tokensToday);
     const spend = m.spendToday === null ? "n/a" : "$" + (m.spendToday < 0.01 && m.spendToday > 0 ? m.spendToday.toFixed(4) : m.spendToday.toFixed(2));
     const latency = m.latencyMs === null ? "—" : m.latencyMs >= 1000 ? (m.latencyMs / 1000).toFixed(1) + "s" : m.latencyMs + "ms";
-    return { agents: s.agents.map((a, j) => (j === i ? { ...a, tokens, spend, latency } : a)) };
+    return { agents: s.agents.map((a, j) => (j === i ? { ...a, tokens, spend, latency, modelError: m.lastError ?? null } : a)) };
   }
 
   if (m.type === "lifecycle") {
@@ -221,6 +221,7 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
           ? {
               ...a, model: m.model, temp: m.temperature, autonomy: m.autonomy, mandate: m.mandate, paused: m.paused,
               maxClip: cm(maxClip), leverage: maxLeverage.toFixed(1) + "x", lossStop: "-" + cm(dailyLossStop),
+              ...(a.model !== m.model ? { modelError: null } : {}), // a new model starts with a clean slate
               // Real counters arrive in `usage` messages. Until then: zero for a model seat, nothing at all for the stub rule.
               ...(a.model === m.model && a.tokens !== "—" && isModelId(m.model)
                 ? {}

@@ -148,7 +148,7 @@ export function createTalk(opts: TalkOptions) {
       `Your turn: ${task}`,
     ].filter(Boolean).join('\n');
     const res = await engine.advisor!.converse!(a.config.model, { system, user }, a.config.temperature, 240).catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed', usage: undefined }));
-    engine.recordUsage(a, res.usage);
+    engine.recordUsage(a, res.usage, res.ok ? undefined : res.reason);
     if (!res.ok) {
       log.warn(`floor talk: ${a.config.model} unavailable for ${a.config.role}: ${res.reason}`);
       return null;
