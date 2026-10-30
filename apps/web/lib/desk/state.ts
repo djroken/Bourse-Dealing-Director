@@ -81,6 +81,16 @@ export interface Score {
   maxDrawdown: number;
 }
 
+export interface CoreNews {
+  id: string;
+  source: string;
+  title: string;
+  url: string | null;
+  publishedAt: number;
+  tag: "MACRO" | "FLOW" | "VENUE" | "ON-CHAIN" | "MARKET";
+  symbols: string[];
+}
+
 export interface DeskState {
   agents: Agent[];
   series: number[][];
@@ -131,6 +141,8 @@ export interface DeskState {
   seq: SeqEvent[];
   fills: Fill[];
   approvals: Approval[];
+  /** Headlines from core's news feeds, newest first. Empty without core: the panel shows its sample. */
+  news: CoreNews[];
   now: number;
   theme: ThemeName;
   glassAlpha: number;
@@ -173,6 +185,7 @@ export function createInitialState(now: number): DeskState {
     chartSrc: "tv", chartSym: "BTCUSDT", chartTf: "5m", chartFull: false, chartSignals: true, signals: {}, instrumentsRev: 0, stocks: null, market: {},
     live, ref, kl: {}, feed: "CONNECTING", funding: null, fx: null, gotLive: false, core: "connecting", coreBook: {}, scores: {},
     seq, fills: makeFills(live, now),
+    news: [],
     approvals: [
       { id: "A1", who: 3, side: "BUY", k: "SOLUSDT", q: 900, why: "SOL ranks top decile on momentum and carry is positive. Confidence 0.68.", t: now - 95000, kind: "SUGGEST", mult: 1 },
       { id: "A2", who: 7, side: "SELL", k: "BTCUSDT", q: 3, why: "Crowd long at the 88th percentile with funding skewed long. Small fade into strength.", t: now - 240000, kind: "SUGGEST", mult: 1 },

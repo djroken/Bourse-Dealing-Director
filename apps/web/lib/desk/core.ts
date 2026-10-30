@@ -2,7 +2,7 @@ import { BROKER_IDS, BROKER_LABEL, type BrokerId } from "./venues";
 import { CORE_URL } from "./secrets";
 import { LBL, PERP, type Autonomy, type Side } from "./data";
 import { cm, fmt, fmtQty } from "./format";
-import type { Approval, DeskState, Fill, Score, SeqEvent } from "./state";
+import type { Approval, CoreNews, DeskState, Fill, Score, SeqEvent } from "./state";
 import { walk } from "./format";
 
 /**
@@ -20,7 +20,8 @@ export type CoreMsg =
   | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; venue?: BrokerId; ts: number }
-  | ({ type: "scorecard"; ts: number } & Score);
+  | ({ type: "scorecard"; ts: number } & Score)
+  | ({ type: "news"; ts: number } & CoreNews);
 
 export const coreFloorUrl = (base: string = CORE_URL): string => base.replace(/^http/, "ws").replace(/\/$/, "") + "/agents";
 
@@ -29,8 +30,27 @@ const str = (v: unknown, max = 500): v is string => typeof v === "string" && v.l
 const num = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const sideOf = (v: unknown): v is Side | "HOLD" => v === "BUY" || v === "SELL" || v === "HOLD";
 
+const NEWS_TAGS = new Set(["MACRO", "FLOW", "VENUE", "ON-CHAIN", "MARKET"]);
+/** A headline: untrusted text from a public feed. Only https/http links survive; React renders the title as text. */
+function parseNews(raw: Record<string, unknown>): CoreMsg | null {
+  if (!str(raw.id, 32) || !str(raw.source, 32) || !str(raw.title, 200) || !raw.title.trim() || !num(raw.publishedAt) || !num(raw.ts)) return null;
+  if (!str(raw.tag, 16) || !NEWS_TAGS.has(raw.tag) || !Array.isArray(raw.symbols)) return null;
+  let url: string | null = null;
+  if (str(raw.url, 300)) {
+    try {
+      const u = new URL(raw.url);
+      if (u.protocol === "https:" || u.protocol === "http:") url = u.toString();
+    } catch {
+      /* not a link */
+    }
+  }
+  const symbols = raw.symbols.filter((x): x is string => str(x, 16)).slice(0, 12);
+  return { type: "news", id: raw.id, source: raw.source, title: raw.title, url, publishedAt: raw.publishedAt, tag: raw.tag as CoreNews["tag"], symbols, ts: raw.ts };
+}
+
 /** Returns a typed message, or null for anything that isn't exactly what core sends. */
 export function parseCoreMsg(raw: unknown): CoreMsg | null {
+  if (isObj(raw) && raw.type === "news") return parseNews(raw);
   if (!isObj(raw) || !str(raw.agentId, 64) || !str(raw.role, 64) || !num(raw.ts)) return null;
   const { agentId, role, ts } = raw;
   if (raw.type === "lifecycle") {
@@ -124,13 +144,14 @@ export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
     coreBook: {},
     scores: {},
     signals: {},
+    news: [],
     series: s.series.map(() => walk(26, 1, 0).map(() => 0)),
   };
 }
 
 export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<DeskState> {
-  if (was !== "live") return { core: "offline", scores: {}, signals: {} };
-  return { core: "offline", scores: {}, signals: {}, seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
+  if (was !== "live") return { core: "offline", scores: {}, signals: {}, news: [] };
+  return { core: "offline", scores: {}, signals: {}, news: [], seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
 }
 
 /** Guest agents (connected over MCP) have no seat on the Desk roster; their activity shows in the chat and blotter. */
@@ -138,6 +159,11 @@ const isGuest = (role: string): boolean => /^guest:/i.test(role.trim());
 const guestName = (role: string): string => role.replace(/^guest:\s*/i, "").trim() || "Guest";
 
 export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | null {
+  if (m.type === "news") {
+    if (s.news.some((n) => n.id === m.id)) return null;
+    const n = { id: m.id, source: m.source, title: m.title, url: m.url, publishedAt: m.publishedAt, tag: m.tag, symbols: m.symbols };
+    return { news: [n, ...s.news].sort((a, b) => b.publishedAt - a.publishedAt).slice(0, 30) };
+  }
   if (m.type === "scorecard") {
     const score: Score = {
       agentId: m.agentId, role: m.role, name: m.name, model: m.model, ideas: m.ideas, scored: m.scored, hits: m.hits, hitRate: m.hitRate,

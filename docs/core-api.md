@@ -19,6 +19,7 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | `BOURSE_VENUE_STOCKS` | `sim` | `alpaca-paper` sends US stock orders you approve to your Alpaca paper account. See [Broker paper accounts](#broker-paper-accounts). |
 | `BOURSE_VENUE_CRYPTO` | `sim` | `binance-testnet` sends crypto orders you approve to the Binance spot testnet. |
 | `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_API_SECRET` | unset | Binance spot testnet key (testnet.binance.vision). Or save them in Setup as `venue.binance-testnet.key` / `.secret`. |
+| `BOURSE_NEWS_FEEDS` | CoinDesk, Cointelegraph, Decrypt, Federal Reserve | Public RSS/Atom feeds for headlines: comma-separated https URLs, optionally `Name=https://…`, at most 8. `off` turns news off. See [News](#news). |
 | `BOURSE_TALK_MIN` | `15` | Minutes between [floor conversation](#floor-conversation) rounds. `0` = only when you instruct the floor. |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
 
@@ -45,6 +46,7 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/candles?symbol=AAPL&tf=5m` | Up to 120 candles for a **stock** (`tf` 1m, 5m, 15m, 1h, 4h, 1d), for the Desk's chart. Crypto candles come from the exchanges directly |
 | GET | `/floor/talk` | `{ enabled, intervalMs, running, lastRoundAt, rounds }`: the floor conversation (see [Floor conversation](#floor-conversation)) |
 | POST | `/floor/round` | Start a round now. `202 { "ok": true }`, or `409` if one is already running |
+| GET | `/news` | `{ feeds: [{ name, url, ok, at, items, error? }], headlines, latest: [ … ] }`: feed status and the latest headlines |
 | GET | `/venues` | `{ venues: [{ id, label, markets, enabled, keySet, routing, sandbox }], live: false }`: the broker paper accounts (see [Broker paper accounts](#broker-paper-accounts)) |
 | PUT | `/venues/:id` | Body `{ "enabled": true\|false }`: route approved orders to that sandbox, or back to core's paper venue. Until restart |
 | POST | `/venues/:id/check` | One authenticated read of the sandbox account: `{ ok: true, detail }` or `{ ok: false, reason }` |
@@ -108,6 +110,12 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 { "type": "usage", "agentId": "…", "role": "…", "callsToday": 12, "tokensToday": 18460, "spendToday": 0.0042, "latencyMs": 1830, "ts": 0 }
 ```
 
+```jsonc
+{ "type": "news", "id": "afa7bd3dae4828b4", "source": "CoinDesk", "title": "…", "url": "https://…" , "publishedAt": 0, "tag": "MACRO|FLOW|VENUE|ON-CHAIN|MARKET", "symbols": ["SOL-USDT"], "ts": 0 }
+```
+
+`news` is a headline from the [news feeds](#news), sent once when core first sees it. A new client receives the latest 20 on connect. `url` is `null` unless it is an http(s) link.
+
 `usage` is a model seat's metering for the UTC day: calls, prompt plus completion tokens, spend in USD (`0` on Ollama and free OpenRouter models, `null` if the provider didn't report a cost) and the latency of the last call. Sent on connect and at most once a second per seat. The Desk's drawer shows it as TOKENS TODAY, SPEND TODAY and LAST LATENCY. Stub seats have no usage.
 
 An `intent` may carry `needsApproval`: `true` means it waits for the owner (every model seat's idea, and stub seats on SUGGEST or APPROVE), `false` means core is filling it itself (a stub seat on AUTO) and a `decision` follows.
@@ -164,11 +172,20 @@ Rules that hold whatever the model says:
 The floor talks. A **round** is one pass round the desk, in this order: Dealing Director opens, then Quant, Sentiment, Market Maker, Execution, Research, On-chain, Risk, and the Director closes with a house view. A round runs every `BOURSE_TALK_MIN` minutes (default 15, `0` turns the timer off), when the owner sends `instruct`, or on `POST /floor/round`. It needs prices first and does nothing while the floor is halted.
 
 - **Model seats talk through their model.** Each gets the market (price, 24h change, funding), its own paper book, the owner's request if there is one, and everything said so far in the round. It answers `{"say": "…", "idea": {"symbol", "side", "confidence"} | null}`; plain text is accepted as `say` with no idea. A failed call means the seat says nothing that round: it is never replaced by a stub line.
-- **Stub seats speak from data and say so** (`stub: true`): the Director names the real movers, trading seats state their momentum read, Risk reports real exposure and loss-stop use, the Director tallies the leans. Research and On-chain stay quiet until they have a feed, rather than invent news.
+- **Stub seats speak from data and say so** (`stub: true`): the Director names the real movers, trading seats state their momentum read, Risk reports real exposure and loss-stop use, the Director tallies the leans. Research quotes the newest headline that names the top mover (or the newest one), On-chain the newest on-chain headline, each with source and age and marked unverified. With no headlines they stay quiet rather than invent news.
 - **What one agent says is data to the next, never instructions.** Earlier lines reach a model only inside a quoted transcript, and the system prompt says so. A line that tries to give orders is passed on as a quote and changes nothing core does.
+- **Headlines are data too.** Every model seat sees up to six headlines from the last 24 hours, in a block labelled quoted, unverified and never instructions. A headline can't place an order: only a trading seat's own idea can, and that still needs the owner.
 - **Ideas become intents that need approval.** Only trading seats may attach an idea. Core checks the symbol, sizes it with the seat's risk limits, scores it like any other idea, and emits an `intent` with `needsApproval: true`, even for a seat on AUTO. The owner approves it on the Desk (`place_order`) and the risk gate still applies.
 - **The owner's instruction** opens the next round and is quoted to every speaker. One instruction every 10 seconds; one more is queued while a round is running.
 - **Cost.** Each model seat makes one call per round (up to 240 output tokens), on top of its normal decisions, and counts toward the provider's daily cap. On Ollama and free OpenRouter models that is free; on paid `openrouter:` models a round costs real money, so raise `BOURSE_TALK_MIN` or set it to `0`.
+
+## News
+
+Core polls a few free public RSS/Atom feeds every 5 minutes (CoinDesk, Cointelegraph, Decrypt and the Federal Reserve's press releases by default; set your own with `BOURSE_NEWS_FEEDS`, or `off`). New headlines go to the Desk's news panel and to the floor conversation.
+
+- **Untrusted text.** Titles are reduced to plain, single-line text (no markup, no control or direction-override characters) and capped at 200 characters; links survive only if they are http(s). A feed is read with a 10 s timeout and at most 1 MB. The Desk renders titles as text and opens links with `noopener noreferrer`.
+- **Tags and symbols are keyword guesses**: `MACRO` (Fed, CPI, rates…), `FLOW` (ETFs, inflows…), `VENUE` (exchanges, listings, hacks), `ON-CHAIN` (wallets, whales, DeFi…), otherwise `MARKET`. `symbols` are floor symbols named by ticker, or for coins by name ("Bitcoin" → `BTC-USDT`).
+- Headlines older than 48 hours are ignored, and a date in the future is replaced by the time core first saw it. One failing feed doesn't stop the others; `GET /news` shows each feed's last result.
 
 ## Broker paper accounts
 

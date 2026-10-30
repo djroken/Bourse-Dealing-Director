@@ -3,7 +3,7 @@
 
 import {
   type Autonomy, type Grp, type Side,
-  APP_VERSION, LBL, PERP, POS, RUNTIME_NAMES, SCRIPT, TINTS, allTape,
+  APP_VERSION, LBL, NEWS, PERP, POS, RUNTIME_NAMES, SCRIPT, TINTS, allTape,
 } from "./data";
 import { cm, fmt, fmtQty, hms, money, path } from "./format";
 import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
@@ -58,7 +58,14 @@ export interface SelView {
   usageNote: string;
 }
 
+export interface NewsView {
+  label: string;
+  empty: string | null;
+  rows: Array<{ key: string; tag: string; age: string; headline: string; url: string | null; foot: string }>;
+}
+
 export interface DeskView {
+  news: NewsView;
   isMobile: boolean;
   isLive: boolean;
   resolved: ResolvedTheme;
@@ -375,6 +382,24 @@ export function buildView(s: DeskState): DeskView {
 
   const nModel = onFloor.filter((x) => isModelId(x.a.model)).length;
   const coreSeats = nModel === 0 ? "stub agents (not AI)" : nModel === onFloor.length ? `${nModel} model agents` : `${nModel} model + ${onFloor.length - nModel} stub agents`;
+  // News: core's live headlines when connected, otherwise the labelled sample.
+  const ageOf = (t: number) => {
+    const mins = Math.max(0, Math.round((s.now - t) / 60_000));
+    return mins < 60 ? `${mins}m` : mins < 2880 ? `${Math.round(mins / 60)}h` : `${Math.round(mins / 1440)}d`;
+  };
+  const news: NewsView = core
+    ? {
+        label: s.news.length ? "LIVE HEADLINES · UNVERIFIED" : "WAITING FOR FEEDS",
+        empty: s.news.length ? null : "No headlines from core's news feeds yet. They're polled every 5 minutes (BOURSE_NEWS_FEEDS).",
+        rows: s.news.slice(0, 20).map((n) => ({
+          key: n.id, tag: n.tag, age: ageOf(n.publishedAt), headline: n.title, url: n.url,
+          foot: n.source + (n.symbols.length ? " · names " + n.symbols.map((x) => x.replace("-USDT", "")).join(", ") : ""),
+        })),
+      }
+    : {
+        label: "SAMPLE HEADLINES", empty: null,
+        rows: NEWS.map((n, i) => ({ key: "s" + i, tag: n.tag, age: n.age, headline: n.headline, url: null, foot: `${n.agent} flagged · impact ${n.impact}` })),
+      };
   const lastFill = fills[0]
     ? "LAST FILL · " + fills[0].side + " " + fills[0].qty + " " + fills[0].sym + " @ " + fills[0].px + " · " + fills[0].agent
     : "";
@@ -406,6 +431,7 @@ export function buildView(s: DeskState): DeskView {
     feedLabel: "FEED " + s.feed + (s.feed === "SIMULATED" ? "" : " · 5s"),
     runtimeLabel: core ? `RUNTIME BOURSE CORE (${nModel ? `${nModel} MODEL / ${onFloor.length - nModel} STUB` : "STUB AGENTS"})` : "RUNTIME SIMULATED",
     lastFill,
+    news,
     modeLabel: "BOURSE v" + APP_VERSION + " · " + (isLive ? "LIVE" : "DEMO · PAPER ONLY"),
     liveBanner: "LIVE · ORDERS ROUTE TO " + (venueNames || "NO VENUE").toUpperCase() + " · AGENTS ON AUTO PLACE REAL ORDERS",
     liveBannerShort: "LIVE · " + (venueNames || "NO VENUE").toUpperCase(),

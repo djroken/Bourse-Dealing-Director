@@ -1,3 +1,4 @@
+import { parseFeedList, type Feed } from './news';
 import { existsSync } from 'node:fs';
 
 export interface CoreConfig {
@@ -30,6 +31,8 @@ export interface CoreConfig {
   talkMin?: number;
   /** Route owner-approved orders to a broker paper account instead of core's paper venue. Default: core's paper venue. */
   venues?: { stocks: boolean; crypto: boolean };
+  /** Public RSS/Atom feeds for headlines (BOURSE_NEWS_FEEDS). Empty = off. Default: a few free crypto and macro feeds. */
+  newsFeeds?: Feed[];
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -99,6 +102,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     extraCrypto: pick(env, 'BOURSE_CRYPTO'),
     stocks: pick(env, 'BOURSE_STOCKS'),
     talkMin: talkOf(pick(env, 'BOURSE_TALK_MIN')),
+    newsFeeds: parseFeedList(pick(env, 'BOURSE_NEWS_FEEDS')),
     venues: {
       stocks: venueOf(pick(env, 'BOURSE_VENUE_STOCKS'), 'BOURSE_VENUE_STOCKS', 'alpaca-paper'),
       crypto: venueOf(pick(env, 'BOURSE_VENUE_CRYPTO'), 'BOURSE_VENUE_CRYPTO', 'binance-testnet'),

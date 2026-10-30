@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, AgentScorecardSchema, defaultAgents } from "../../../packages/shared/src";
+import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, AgentScorecardSchema, NewsMsgSchema, defaultAgents } from "../../../packages/shared/src";
 import { SEED_AGENTS } from "../lib/desk/data";
 import { applyCoreMsg, coreFloorUrl, deskSym, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "../lib/desk/core";
 import { createInitialState, tickState, type DeskState } from "../lib/desk/state";
@@ -171,7 +171,7 @@ describe("connection lifecycle", () => {
     const lost = onCoreLost(live, 9, "live");
     expect(lost.core).toBe("offline");
     expect(lost.seq!.at(-1)!.sysText).toMatch(/Lost connection/);
-    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {}, signals: {} }); // never connected: say nothing
+    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {}, signals: {}, news: [] }); // never connected: say nothing
   });
 });
 
@@ -334,5 +334,31 @@ describe("broker paper fills", () => {
     const p = applyCoreMsg(s, parseCoreMsg(decision({ action: "HOLD", size: 0, riskChecked: false, rationale: "Binance testnet refused the order: insufficient balance" }))!)!;
     expect(p.seq!.at(-1)!.sysText).toContain("not filled: Binance testnet refused the order: insufficient balance");
     expect(parseCoreMsg(decision({ venue: "binance-live" }))).not.toHaveProperty("venue");
+  });
+});
+
+describe("headlines from core", () => {
+  const news = (over: Record<string, unknown> = {}) => ({
+    type: "news", id: "abc123", source: "CoinDesk", title: "Bitcoin ETF inflows hit $1.2B", url: "https://www.coindesk.com/a", publishedAt: 1_000_000 - 12 * 60_000,
+    tag: "FLOW", symbols: ["BTC-USDT"], ts: 1_000_000, ...over,
+  });
+  it("replace the sample in the news panel, newest first, once each, labelled unverified", () => {
+    expect(NewsMsgSchema.safeParse(news()).success).toBe(true);
+    let s: DeskState = { ...base(), core: "live" };
+    expect(buildView(s).news).toMatchObject({ label: "WAITING FOR FEEDS", rows: [] });
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(news())!)! };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(news({ id: "new1", title: "Fed holds rates", tag: "MACRO", symbols: [], publishedAt: 1_000_000 - 60_000 }))!)! };
+    expect(applyCoreMsg(s, parseCoreMsg(news())!)).toBeNull(); // already shown
+    const v = buildView(s).news;
+    expect(v.label).toBe("LIVE HEADLINES · UNVERIFIED");
+    expect(v.rows.map((r) => [r.headline, r.age, r.foot])).toEqual([["Fed holds rates", "1m", "CoinDesk"], ["Bitcoin ETF inflows hit $1.2B", "12m", "CoinDesk · names BTC"]]);
+    expect(buildView(base()).news.label).toBe("SAMPLE HEADLINES");
+    expect({ ...s, ...onCoreLost(s, 2, "live") }.news).toEqual([]);
+  });
+  it("only http(s) links survive and malformed headlines are dropped", () => {
+    expect(parseCoreMsg(news({ url: "javascript:alert(1)" }))).toMatchObject({ url: null });
+    expect(parseCoreMsg(news({ tag: "SPAM" }))).toBeNull();
+    expect(parseCoreMsg(news({ title: "x".repeat(201) }))).toBeNull();
+    expect(parseCoreMsg(news({ title: "   " }))).toBeNull();
   });
 });

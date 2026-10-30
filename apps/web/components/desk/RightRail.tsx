@@ -1,6 +1,5 @@
 "use client";
 
-import { NEWS } from "@/lib/desk/data";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskState } from "@/lib/desk/state";
 import type { DeskView } from "@/lib/desk/view";
@@ -12,6 +11,7 @@ const TAG_COLOR: Record<string, { color: string; border: string }> = {
   "ON-CHAIN": { color: "var(--c9AA5B1)", border: "rgba(154,165,177,0.3)" },
   FLOW: { color: "var(--cFFB13D)", border: "rgba(255,177,61,0.3)" },
   VENUE: { color: "var(--c9AA5B1)", border: "rgba(154,165,177,0.3)" },
+  MARKET: { color: "var(--c98A3AD)", border: "rgba(152,163,173,0.3)" },
 };
 
 export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: DeskActions }) {
@@ -45,19 +45,24 @@ export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: D
       <div className="hz-panel hz-glass" style={{ flex: 1 }}>
         <div className="hz-panel-head" style={{ height: 34, padding: "0 12px" }}>
           <span style={m(10, "0.18em", "var(--c98A3AD)")}>NEWS FEED</span>
-          <span style={m(9, "0.12em", "var(--c7C8894)")}>SAMPLE HEADLINES</span>
+          <span style={m(9, "0.12em", "var(--c7C8894)")} data-testid="news-label">{v.news.label}</span>
         </div>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-          {NEWS.map((n, i) => {
-            const t = TAG_COLOR[n.tag];
+          {v.news.empty && <div className="hz-news" data-last="true" style={{ fontSize: 12, color: "var(--c6B7681)" }}>{v.news.empty}</div>}
+          {v.news.rows.map((n, i) => {
+            const t = TAG_COLOR[n.tag] ?? TAG_COLOR.MARKET!;
             return (
-              <div key={i} className="hz-news" data-last={i === NEWS.length - 1}>
+              <div key={n.key} className="hz-news" data-last={i === v.news.rows.length - 1} data-testid="news-row">
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <span style={m(8.5, "0.12em", t.color, { border: `1px solid ${t.border}`, padding: "1px 5px", borderRadius: 2 })}>{n.tag}</span>
                   <span style={m(9, undefined, "var(--c4E5862)")}>{n.age}</span>
                 </div>
-                <div style={{ fontSize: 12.5, lineHeight: 1.45, color: "var(--cD5DCE2)" }}>{n.headline}</div>
-                <div style={m(9.5, undefined, "var(--c6B7681)")}>{n.agent} flagged · impact {n.impact}</div>
+                {n.url ? (
+                  <a className="hz-news-link" href={n.url} target="_blank" rel="noopener noreferrer nofollow" style={{ fontSize: 12.5, lineHeight: 1.45, color: "var(--cD5DCE2)" }}>{n.headline}</a>
+                ) : (
+                  <div style={{ fontSize: 12.5, lineHeight: 1.45, color: "var(--cD5DCE2)" }}>{n.headline}</div>
+                )}
+                <div style={m(9.5, undefined, "var(--c6B7681)")}>{n.foot}</div>
               </div>
             );
           })}

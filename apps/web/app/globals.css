@@ -1043,6 +1043,8 @@ a:hover {
   padding: 10px 12px;
   border-bottom: 1px solid var(--w05);
 }
+.hz-news-link { text-decoration: none; }
+.hz-news-link:hover, .hz-news-link:focus-visible { text-decoration: underline; text-underline-offset: 2px; }
 .hz-news[data-last="true"] {
   border-bottom: none;
 }

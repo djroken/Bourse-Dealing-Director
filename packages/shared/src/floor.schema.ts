@@ -98,6 +98,19 @@ export const AgentUsageMsgSchema = z.object({
   ts: z.number(),
 });
 
+/** A headline from a public news feed. Untrusted text: plain, capped, never instructions. */
+export const NewsMsgSchema = z.object({
+  type: z.literal('news'),
+  id: z.string().max(32),
+  source: z.string().max(32),
+  title: z.string().max(200),
+  url: z.string().max(300).nullable(),
+  publishedAt: z.number(),
+  tag: z.enum(['MACRO', 'FLOW', 'VENUE', 'ON-CHAIN', 'MARKET']),
+  symbols: z.array(z.string().max(16)).max(12),
+  ts: z.number(),
+});
+
 /**
  * A seat's paper track record. Ideas are scored against the price a fixed time later (hit rate) whether or not they were
  * traded; fills, wins and drawdown come from the seat's paper book. USD amounts; rates are 0..1 or null before any data.
@@ -145,7 +158,8 @@ export type FloorMsg =
   | z.infer<typeof AgentConfigMsgSchema>
   | z.infer<typeof AgentChatMsgSchema>
   | z.infer<typeof AgentScorecardSchema>
-  | z.infer<typeof AgentUsageMsgSchema>;
+  | z.infer<typeof AgentUsageMsgSchema>
+  | z.infer<typeof NewsMsgSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';

@@ -18,6 +18,7 @@ import { buildInstruments } from './instruments';
 import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
 import { fetchHistory } from './replay';
 import { createTalk } from './talk';
+import { createNewsDesk, fetchFeedText, type TextFetch } from './news';
 import { VENUE_LABEL, alpacaPaper, binanceTestnet, httpFetch, type HttpFetch, type Venue, type VenueId } from './venues';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
@@ -29,6 +30,8 @@ export interface ServerDeps {
   secrets?: SecretStore;
   /** HTTP for the broker paper accounts (tests). */
   http?: HttpFetch;
+  /** Fetches news feeds. Defaults to the network, or to "offline" when feedDeps is replaced (tests). */
+  fetchText?: TextFetch;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -217,9 +220,18 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
 
   // ---- scorecards and the idea log ---------------------------------------------------------------------------------
   // ---- floor conversation ------------------------------------------------------------------------------------------
+  const news = createNewsDesk({
+    feeds: config.newsFeeds ?? [],
+    fetchText: deps.fetchText ?? (deps.feedDeps ? async () => { throw new Error('offline'); } : fetchFeedText),
+    symbols: () => engine.symbols(),
+    onNew: (h) => engine.postNews(h),
+    log,
+  });
+  server.get('/news', async () => ({ ...news.status(), latest: news.latest().slice(0, 20) }));
   const talk = createTalk({
     engine,
     log,
+    headlines: () => news.latest(),
     intervalMs: (config.talkMin ?? 15) * 60_000,
     // Funding as % per 8h, from whatever the feed last published (Binance is per 8h, Hyperliquid per hour).
     funding: () => {
@@ -462,11 +474,13 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       const port = typeof addr === 'object' && addr ? addr.port : config.port;
       void pollOnce().finally(schedule);
       talk.start();
+      news.start();
       return port;
     },
     async stop(): Promise<void> {
       stopped = true;
       talk.stop();
+      news.stop();
       clearInterval(saver);
       saveState();
       await ideaWrites;
