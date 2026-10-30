@@ -28,6 +28,40 @@ export interface TalkOptions {
   headlines?: () => Headline[];
   /** Called once per model call in a round: the training/eval record (prompt, reply, parsed line, idea). */
   onCall?: (rec: TalkCall) => void;
+  /** Earlier rounds to carry on from (e.g. read from disk). Untrusted: checked line by line. */
+  initialMemory?: unknown;
+  /** Called after every round with the rounds remembered, to save them. */
+  onMemory?: (memory: RoundMemory[]) => void;
+}
+
+export interface RoundMemory {
+  id: string;
+  at: number;
+  owner: string | null;
+  view: string | null;
+  said: TalkLine[];
+}
+
+/** Rounds read back from disk: anything malformed is dropped, text is capped. */
+export function parseMemory(raw: unknown, max = 3): RoundMemory[] {
+  if (!Array.isArray(raw)) return [];
+  const str = (v: unknown, n: number): string | null => (typeof v === 'string' ? v.slice(0, n) : null);
+  const out: RoundMemory[] = [];
+  for (const r of raw.slice(-max)) {
+    if (typeof r !== 'object' || r === null) continue;
+    const x = r as Record<string, unknown>;
+    const id = str(x.id, 32);
+    if (!id || typeof x.at !== 'number' || !Number.isFinite(x.at) || !Array.isArray(x.said)) continue;
+    const said: TalkLine[] = [];
+    for (const l of x.said.slice(0, 20)) {
+      if (typeof l !== 'object' || l === null) continue;
+      const y = l as Record<string, unknown>;
+      const who = str(y.who, 32), role = str(y.role, 64), text = str(y.text, 480);
+      if (who && role && text) said.push({ who, role, text, stub: y.stub === true });
+    }
+    out.push({ id, at: x.at, owner: str(x.owner, 400), view: str(x.view, 480), said });
+  }
+  return out;
 }
 
 /**
@@ -109,8 +143,8 @@ export function createTalk(opts: TalkOptions) {
   let lastInstructAt = 0;
   let rounds = 0;
   /** The last few rounds, so the floor carries on a conversation instead of starting from nothing every time. */
-  const memory: Array<{ id: string; at: number; owner: string | null; view: string | null; said: TalkLine[] }> = [];
   const MEMORY_ROUNDS = 3;
+  const memory: RoundMemory[] = parseMemory(opts.initialMemory, MEMORY_ROUNDS);
   const cap = (t: string, n = 160) => (t.length > n ? t.slice(0, n - 1) + '…' : t).replace(/"/g, "'");
   const hhmm = (t: number) => new Date(t).toISOString().slice(11, 16);
 
@@ -360,6 +394,7 @@ export function createTalk(opts: TalkOptions) {
       const close = lines.at(-1);
       memory.push({ id, at: lastRoundAt, owner, view: close && close.role === 'Dealing Director' && lines.length > 1 ? close.text : null, said: lines });
       if (memory.length > MEMORY_ROUNDS) memory.shift();
+      opts.onMemory?.(memory.map((r) => ({ ...r, said: [...r.said] })));
       log.info(`floor round ${id}: ${lines.length} line(s)`);
       return { id, lines };
     } finally {
