@@ -5,6 +5,7 @@ import { applyFill, mark, newBook, type Book } from './book';
 import type { Advisor, ModelUsage } from './models';
 import { DEFAULT_CRYPTO, type Instrument } from './instruments';
 import type { Venue, VenueResult } from './venues';
+import type { Headline } from './news';
 import { createScorebook, type IdeaRecord, type ScoreDump, type Scorecard } from './scorecard';
 
 /** What survives a restart: seat settings, every paper book (guests included) and the scorebook. Keyed by role. */
@@ -176,7 +177,7 @@ export function createEngine(opts: EngineOptions = {}) {
   const lastEval = new Map<string, number>();
 
   const wants = (c: Client, msg: FloorMsg): boolean =>
-    c.subscriptions.size === 0 || msg.agentId === '*' || c.subscriptions.has(msg.agentId);
+    c.subscriptions.size === 0 || msg.type === 'news' || msg.agentId === '*' || c.subscriptions.has(msg.agentId);
 
   const broadcast = (msg: FloorMsg): void => {
     if (msg.type === 'intent' || msg.type === 'decision' || msg.type === 'chat') {
@@ -521,8 +522,20 @@ export function createEngine(opts: EngineOptions = {}) {
     return n;
   };
 
+  /** The latest headlines, newest first, so a new client sees the panel filled. */
+  const newsSent: FloorMsg[] = [];
+  const postNews = (items: Headline[]): void => {
+    for (const h of items) {
+      const msg: FloorMsg = { type: 'news', ...h, symbols: h.symbols.slice(0, 12), ts: now() };
+      newsSent.unshift(msg);
+      broadcast(msg);
+    }
+    newsSent.splice(20);
+  };
+
   return {
     agents,
+    postNews,
 
     /** Called by the feed on every price tick. Only the symbol that moved is evaluated. */
     pushTick(symbol: string, tick: Tick): void {
@@ -702,6 +715,7 @@ export function createEngine(opts: EngineOptions = {}) {
       for (const a of agents) if (hasBook(a)) ws.send(JSON.stringify(pnlMsg(a)));
       for (const c of scores.cards()) ws.send(JSON.stringify(scorecardMsg(c)));
       for (const a of agents) if (usageBy.has(a.id)) ws.send(JSON.stringify(usageMsg(a)));
+      for (const n of [...newsSent].reverse()) ws.send(JSON.stringify(n));
       log.info(`floor client connected (${clients.size})`);
 
       ws.on('message', (raw) => {
