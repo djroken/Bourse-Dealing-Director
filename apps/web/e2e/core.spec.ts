@@ -213,6 +213,10 @@ test("a guest agent's trade and chat show up on the desk, labelled as a guest", 
 });
 
 test("scorecards from core show in the SCORES tab and the agent drawer", async ({ page }) => {
+  await page.route(/127\.0\.0\.1:4000\/league/, (r) => r.fulfill({ json: { scored: 45, skipped: 0, source: "log+session", computedAt: 1, rows: [
+    { model: "openrouter-free:deepseek/deepseek-chat:free", ideas: 30, hits: 18, hitRate: 0.6, avgReturnPct: 0.08, seats: ["Quant / Signals"], firstAt: 1, lastAt: 2 },
+    { model: "stub rule", ideas: 15, hits: 6, hitRate: 0.4, avgReturnPct: -0.02, seats: ["Execution Trader"], firstAt: 1, lastAt: 2 },
+  ] } }));
   const core = await mockCore(page);
   await openDesk(page);
   await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
@@ -233,6 +237,11 @@ test("scorecards from core show in the SCORES tab and the agent drawer", async (
   await expect(rows.nth(1)).toContainText("GUEST · MCP");
   await expect(page.getByRole("link", { name: "EXPORT IDEAS" })).toHaveAttribute("href", /\/export\/ideas\.jsonl$/);
   await expect(page.getByRole("link", { name: "EXPORT TALK" })).toHaveAttribute("href", /\/export\/talk\.jsonl$/);
+  const league = page.getByRole("region", { name: "Model league" });
+  await expect(league.getByTestId("league-row")).toHaveCount(2);
+  await expect(league.getByTestId("league-row").first()).toContainText("deepseek/deepseek-chat:free");
+  await expect(league).toContainText("OPENROUTER FREE");
+  await expect(league).toContainText("Grey rows have under 20 ideas");
 
   await page.locator(".hz-agent", { hasText: "Atlas Reyner" }).click();
   const drawer = page.getByRole("dialog", { name: /Atlas Reyner settings/ });

@@ -25,6 +25,8 @@ export interface IdeaInput {
   price: number;
   change24h: number | null;
   source: string;
+  /** The seat's model failed and the stub rule made this idea instead: it is not the model's idea. */
+  fallback?: boolean;
 }
 
 export interface IdeaOutcome {
