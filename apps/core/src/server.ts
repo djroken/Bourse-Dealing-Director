@@ -17,6 +17,7 @@ import { cryptoFeeds, fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from '
 import { buildInstruments } from './instruments';
 import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
 import { fetchHistory } from './replay';
+import { createTalk } from './talk';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
 export interface ServerDeps {
@@ -197,6 +198,30 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   server.get('/models', async () => advisor.status());
 
   // ---- scorecards and the idea log ---------------------------------------------------------------------------------
+  // ---- floor conversation ------------------------------------------------------------------------------------------
+  const talk = createTalk({
+    engine,
+    log,
+    intervalMs: (config.talkMin ?? 15) * 60_000,
+    // Funding as % per 8h, from whatever the feed last published (Binance is per 8h, Hyperliquid per hour).
+    funding: () => {
+      const m = new Map<string, number>();
+      for (const msg of lastBySymbol.values()) if (msg.type === 'funding') m.set(msg.symbol, msg.rate * 100 * (8 / msg.periodHours));
+      return m;
+    },
+  });
+  engine.setInstructHandler((text) => {
+    const r = talk.instruct(text);
+    if (!r.ok) server.log.warn(`owner instruction not taken: ${r.reason}`);
+  });
+  server.get('/floor/talk', async () => talk.status());
+  /** Start a conversation round now (the Desk's composer uses the socket instead, with the owner's words). */
+  server.post('/floor/round', async (_req, reply) => {
+    if (talk.status().running) return reply.code(409).send({ error: 'a round is already running' });
+    void talk.runRound();
+    return reply.code(202).send({ ok: true });
+  });
+
   // ---- replay: run seats over past candles ---------------------------------------------------------------------------
   const replays = createReplayRunner({
     fetchJson: (url) => feedDeps.fetchJson(url),
@@ -393,10 +418,12 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       const addr = server.server.address();
       const port = typeof addr === 'object' && addr ? addr.port : config.port;
       void pollOnce().finally(schedule);
+      talk.start();
       return port;
     },
     async stop(): Promise<void> {
       stopped = true;
+      talk.stop();
       clearInterval(saver);
       saveState();
       await ideaWrites;

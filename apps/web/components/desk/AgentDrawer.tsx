@@ -50,13 +50,14 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
             ollama: runs locally and is free. openrouter-free: only accepts :free models. openrouter: takes any model and may cost money. Model seats suggest only; they never trade on their own.
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            {([["TOKENS 24H", sel.tokens], ["SPEND 24H", sel.spend], ["LATENCY", sel.latency]] as const).map(([label, value]) => (
+            {([["TOKENS TODAY", sel.tokens], ["SPEND TODAY", sel.spend], ["LAST LATENCY", sel.latency]] as const).map(([label, value]) => (
               <div key={label} style={{ flex: 1, border: "1px solid var(--w07)", borderRadius: 3, padding: "8px 10px" }}>
                 <div style={m(8.5, "0.14em", "var(--c5D6873)")}>{label}</div>
                 <div style={m(12.5, undefined, undefined, { marginTop: 3 })}>{value}</div>
               </div>
             ))}
           </div>
+          <div style={m(9, undefined, "var(--c5D6873)", { lineHeight: 1.5 })} data-testid="usage-note">{sel.usageNote}</div>
         </div>
 
         {sel.track && (

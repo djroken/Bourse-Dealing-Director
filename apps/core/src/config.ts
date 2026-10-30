@@ -26,6 +26,8 @@ export interface CoreConfig {
   extraCrypto?: string;
   /** US stock tickers (BOURSE_STOCKS). Only used when an Alpaca key is configured; default SPY,AAPL,NVDA,TSLA. */
   stocks?: string;
+  /** Minutes between floor conversation rounds (BOURSE_TALK_MIN). 0 = only when the owner asks. Default 15. */
+  talkMin?: number;
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -56,6 +58,13 @@ function horizonOf(v: string | undefined): number {
   return n;
 }
 
+function talkOf(v: string | undefined): number {
+  if (v === undefined || v.trim() === '') return 15;
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0 || n > 1440) throw new Error(`BOURSE_TALK_MIN must be between 0 and 1440 minutes, got "${v}"`);
+  return n;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
   const port = Number(env.CORE_PORT ?? 4000);
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -81,6 +90,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     persist: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_PERSIST') ?? ''),
     extraCrypto: pick(env, 'BOURSE_CRYPTO'),
     stocks: pick(env, 'BOURSE_STOCKS'),
+    talkMin: talkOf(pick(env, 'BOURSE_TALK_MIN')),
   };
 }
 

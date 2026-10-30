@@ -21,6 +21,8 @@ export const AgentIntentSchema = z.object({
   size: z.number().nonnegative(),
   confidence: z.number().min(0).max(1),
   rationale: z.string(),
+  /** True when the idea waits for a human; false when core fills it itself (a stub seat on AUTO). */
+  needsApproval: z.boolean().optional(),
   ts: z.number(),
 });
 
@@ -73,6 +75,24 @@ export const AgentChatMsgSchema = z.object({
   name: z.string(),
   text: z.string().max(500),
   ts: z.number(),
+  /** Floor conversation: which round this line belongs to. Absent for guest posts. */
+  round: z.string().optional(),
+  /** The model that wrote it, or absent for the stub rule and the owner. */
+  model: z.string().optional(),
+  /** True when the line was written by core's stub rule from real data, not by a model. */
+  stub: z.boolean().optional(),
+});
+
+/** A seat's model use today (UTC). `spendToday` is null when the provider doesn't report cost. */
+export const AgentUsageMsgSchema = z.object({
+  type: z.literal('usage'),
+  agentId: z.string(),
+  role: z.string(),
+  callsToday: z.number().int().nonnegative(),
+  tokensToday: z.number().int().nonnegative(),
+  spendToday: z.number().nonnegative().nullable(),
+  latencyMs: z.number().nonnegative().nullable(),
+  ts: z.number(),
 });
 
 /**
@@ -112,6 +132,7 @@ export type AgentPnl = z.infer<typeof AgentPnlSchema>;
 export type AgentConfigMsg = z.infer<typeof AgentConfigMsgSchema>;
 export type AgentChatMsg = z.infer<typeof AgentChatMsgSchema>;
 export type AgentScorecard = z.infer<typeof AgentScorecardSchema>;
+export type AgentUsageMsg = z.infer<typeof AgentUsageMsgSchema>;
 
 export type FloorMsg =
   | z.infer<typeof AgentLifecycleSchema>
@@ -120,7 +141,8 @@ export type FloorMsg =
   | z.infer<typeof AgentPnlSchema>
   | z.infer<typeof AgentConfigMsgSchema>
   | z.infer<typeof AgentChatMsgSchema>
-  | z.infer<typeof AgentScorecardSchema>;
+  | z.infer<typeof AgentScorecardSchema>
+  | z.infer<typeof AgentUsageMsgSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';

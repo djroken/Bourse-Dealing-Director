@@ -108,12 +108,12 @@ describe("core config", () => {
     for (const bad of [config("Pico", { autonomy: "YOLO" }), config("Pico", { paused: "no" }), config("Pico", { riskLimits: { maxClip: "x" } }), config("Pico", { mandate: "x".repeat(2001) }), config("Pico", { riskLimits: null })])
       expect(parseCoreMsg(bad)).toBeNull();
   });
-  it("overlays core's settings and limits onto the seat, and says the stub agents use no tokens", () => {
+  it("overlays core's settings and limits onto the seat; a stub-rule seat shows no model usage", () => {
     const s = { ...base(), core: "live" as const };
     const p = applyCoreMsg(s, parseCoreMsg(config("Pico"))!)!;
     expect(p.agents![seat("Pico")]).toMatchObject({
       autonomy: "AUTO", temp: 0.2, mandate: "Be careful.", paused: true,
-      maxClip: "$4.0k", leverage: "5.0x", lossStop: "-$300", tokens: "0", spend: "$0.00",
+      maxClip: "$4.0k", leverage: "5.0x", lossStop: "-$300", tokens: "—", spend: "—",
     });
     expect(p.agents![seat("Atlas")]).toEqual(s.agents[seat("Atlas")]); // other seats untouched
   });
@@ -263,5 +263,52 @@ describe("scorecards", () => {
   it("a long model id (up to core's 96 characters) still updates the seat", () => {
     const id = "openrouter:" + "v".repeat(85);
     expect(parseCoreMsg(config("Pico", { model: id }))).toMatchObject({ model: id });
+  });
+});
+
+describe("floor conversation", () => {
+  const chat = (over: Record<string, unknown>) => ({ type: "chat", agentId: "TKT-004", role: roleOf("Pico"), name: "Pico Nandra", text: "SOL momentum is clean.", ts: 7, round: "Tabc", ...over });
+  it("a seat's line joins the floor chat with its name, role and who wrote it", () => {
+    let s: DeskState = { ...base(), core: "live" };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(AgentChatMsgSchema.parse(chat({ model: "ollama:llama3.2" }))!)!) };
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(chat({ agentId: "TKT-007", role: roleOf("Bastion"), name: "Bastion Cole", text: "No open risk.", stub: true }))!)! };
+    const rows = buildView(s).chat.slice(-2);
+    expect(rows[0]).toMatchObject({ kind: "msg", who: "Pico", text: "SOL momentum is clean." });
+    expect(rows[0]!.role).toContain("ollama:llama3.2");
+    expect(rows[1]!.role).toContain("STUB RULE");
+  });
+  it("the owner's echoed words show as YOU; unknown seats are ignored", () => {
+    const s = base();
+    const p = applyCoreMsg(s, parseCoreMsg(chat({ agentId: "OWNER", role: "Owner", name: "YOU", text: "flatten SOL" }))!)!;
+    expect(p.seq!.at(-1)).toMatchObject({ user: "flatten SOL" });
+    expect(applyCoreMsg(s, parseCoreMsg(chat({ role: "Janitor" }))!)).toBeNull();
+  });
+  it("the strip and footer say how many seats run a model, instead of always 'stub agents'", () => {
+    const s: DeskState = { ...base(), core: "live" };
+    expect(buildView({ ...s, agents: s.agents.map((a) => ({ ...a, model: "stub" })) }).strip).toContain("stub agents (not AI)");
+    const mixed = { ...s, agents: s.agents.map((a, i) => ({ ...a, model: i < 3 ? "ollama:llama3.2" : "stub" })) };
+    expect(buildView(mixed).strip).toContain("3 model + 5 stub agents");
+    expect(buildView(mixed).runtimeLabel).toBe("RUNTIME BOURSE CORE (3 MODEL / 5 STUB)");
+  });
+  it("usage messages become the drawer's real counters", () => {
+    const s = base();
+    const u = { type: "usage", agentId: "TKT-004", role: roleOf("Pico"), callsToday: 12, tokensToday: 18_460, spendToday: 0.0042, latencyMs: 1830, ts: 1 };
+    const p = applyCoreMsg(s, parseCoreMsg(u)!)!;
+    expect(p.agents![seat("Pico")]).toMatchObject({ tokens: "18.5k", spend: "$0.0042", latency: "1.8s" });
+    expect(applyCoreMsg(s, parseCoreMsg({ ...u, spendToday: null })!)!.agents![seat("Pico")]!.spend).toBe("n/a");
+    expect(parseCoreMsg({ ...u, tokensToday: -1 })).toBeNull();
+  });
+  it("core's needsApproval decides the queue, so a model seat on AUTO still reaches the owner", () => {
+    const s = base(); // Atlas is AUTO in the seed roster
+    const auto = intent("Atlas", { needsApproval: true, rationale: "ollama:x in floor talk: buy" });
+    expect(applyCoreMsg(s, parseCoreMsg(auto)!)!.approvals!.filter((a) => a.raw)).toHaveLength(1);
+    expect(applyCoreMsg(s, parseCoreMsg(intent("Pico", { needsApproval: false }))!)).toBeNull();
+    expect(applyCoreMsg(s, parseCoreMsg(intent("Atlas"))!)).toBeNull(); // older core: AUTO means a decision follows
+  });
+  it("the drawer explains the counters for a stub seat and a model seat", () => {
+    const s: DeskState = { ...base(), core: "live", sel: seat("Pico") };
+    expect(buildView(s).sel!.usageNote).toContain("stub rule");
+    const m = { ...s, agents: s.agents.map((a, i) => (i === seat("Pico") ? { ...a, model: "ollama:llama3.2" } : a)) };
+    expect(buildView(m).sel!.usageNote).toContain("counted by core");
   });
 });

@@ -10,7 +10,8 @@
 >
 > **Not financial advice.** When live trading arrives it will be off by default, use your own exchange keys, and be entirely at your own risk.
 
-![The Bourse desk](docs/screenshots/desk-dark.png)
+![The Bourse desk: the owner asks a question and the agents discuss it in turn, each line labelled with the model or stub rule that wrote it](docs/screenshots/floor-talk.png)
+<sub>A floor round: you ask, the Director opens, the desks answer each other, Risk reports and the Director gives a house view. Model seats are labelled with their model, the rest with STUB RULE. In this shot the model replies came from a stand-in for Ollama and prices are simulated, because it was taken offline.</sub>
 
 <p>
   <img src="docs/screenshots/scores.png" alt="The SCORES tab: each agent's hit rate, win rate, P&L and drawdown on paper" width="49%">
@@ -36,7 +37,8 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Encrypted key store (core) | **Working; the OpenRouter adapter reads from it** | AES-256-GCM at rest, write-only over HTTP. Needs `BOURSE_MASTER_KEY` |
 | Market prices and candles | **Real** | Crypto fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed. Stocks and any extra coins come through core |
 | Markets | **Crypto working; US stocks working with a free Alpaca key; FX not yet** | BTC, ETH, SOL, BNB and XRP out of the box, plus any Binance coin you add with `BOURSE_CRYPTO`. Add a free Alpaca paper-account key in Setup (Market data → Alpaca) and restart core to trade SPY, AAPL, NVDA and TSLA (or your own `BOURSE_STOCKS`) on paper, with live quotes, charts and replay. Agents only act on stocks while the US market is open. FX has no free intraday source yet. See [docs/core-api.md](docs/core-api.md#markets) |
-| Floor chat, fills, approvals | **Core's stub agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule (not AI models); AUTO seats fill on the paper venue, SUGGEST/APPROVE seats send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
+| Floor conversation | **Working, when core is running** | The agents talk to each other in rounds: every 15 minutes (`BOURSE_TALK_MIN`) or whenever you type in the floor chat. Seats on a model (Ollama or OpenRouter) read the market and what the others said, reply to each other and can propose a trade, which goes to your queue. Seats without a model speak from real data and are labelled STUB RULE. What one agent says is quoted to the next as data, never as instructions. The drawer shows each model seat's real calls, tokens, spend and latency. See [docs/core-api.md](docs/core-api.md#floor-conversation) |
+| Floor chat, fills, approvals | **Core's agents when core is running**, otherwise simulated | Run `pnpm dev` and the desk connects to core automatically. Four trading seats follow a simple 24h-momentum rule unless you give them a model; AUTO stub seats fill on the paper venue, SUGGEST/APPROVE seats and every model seat send ideas to your queue, and a risk gate can veto. With no core, the desk falls back to a scripted conversation. It says which on screen |
 | Roster P&L, exposure, sparklines, header P&L and NAV | **Core's paper book when core is running**, otherwise simulated | Core keeps a paper book per trading seat (average-cost, realised + unrealised) on a $100k paper capital basis, and its loss stop reads that P&L. Orders you approve go to core, which risk-checks and fills them, so they show up in the same book |
 | News feed | **Sample data** | Fixed illustrative headlines, labelled as such |
 | Bourse Core (`apps/core`) | **Working, connected to the desk** | Market-data feed, an agent engine (stub rules, or Ollama/OpenRouter models that only suggest) with a hard risk gate, HTTP and WebSocket API. HALT ALL and approved orders go to core. Agent drawer edits (autonomy, pause, model, temperature, mandate) are sent to core; risk limits are read-only and core's settings reset on restart. See [docs/core-api.md](docs/core-api.md) |
@@ -134,6 +136,9 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Agent scorecards: track each agent's paper record, and export it for evaluation and fine-tuning
 - [x] Paper books, scorecards and seat settings survive restarts
 - [x] Replay: score agents on past candles in minutes, with no look-ahead
+- [x] The floor talks: agents discuss the market in rounds, answer your instructions and propose trades to your queue; real token and cost counters
+- [ ] Broker paper accounts (Alpaca paper, Binance testnet) as venues, so approved trades get real exchange fills with play money
+- [ ] A real news feed for the Research seat (free RSS), treated as untrusted text
 - [ ] Execution layer and venue adapters, then Live mode (opt-in, own keys, behind the same risk gate and HALT ALL)
 
 ## Contributing

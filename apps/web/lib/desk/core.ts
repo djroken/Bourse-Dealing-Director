@@ -13,9 +13,10 @@ export type CoreStatus = "connecting" | "live" | "offline";
 
 export type CoreMsg =
   | { type: "lifecycle"; agentId: string; role: string; status: "initialized" | "running" | "paused" | "halted"; ts: number }
-  | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number }
+  | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number; needsApproval?: boolean }
   | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
-  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number }
+  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean }
+  | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number }
   | ({ type: "scorecard"; ts: number } & Score);
@@ -36,7 +37,19 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
     return st === "initialized" || st === "running" || st === "paused" || st === "halted" ? { type: "lifecycle", agentId, role, status: st, ts } : null;
   }
   if (raw.type === "chat") {
-    return str(raw.name, 64) && str(raw.text, 500) && raw.text.trim() ? { type: "chat", agentId, role, name: raw.name, text: raw.text, ts } : null;
+    if (!str(raw.name, 64) || !str(raw.text, 500) || !raw.text.trim()) return null;
+    return {
+      type: "chat", agentId, role, name: raw.name, text: raw.text, ts,
+      ...(str(raw.round, 32) ? { round: raw.round } : {}),
+      ...(str(raw.model, 96) ? { model: raw.model } : {}),
+      ...(raw.stub === true ? { stub: true } : {}),
+    };
+  }
+  if (raw.type === "usage") {
+    const int = (v: unknown) => num(v) && v >= 0;
+    if (!int(raw.callsToday) || !int(raw.tokensToday)) return null;
+    if (!(raw.spendToday === null || int(raw.spendToday)) || !(raw.latencyMs === null || int(raw.latencyMs))) return null;
+    return { type: "usage", agentId, role, callsToday: raw.callsToday as number, tokensToday: raw.tokensToday as number, spendToday: raw.spendToday as number | null, latencyMs: raw.latencyMs as number | null, ts };
   }
   if (raw.type === "config") {
     const rl = raw.riskLimits;
@@ -74,7 +87,10 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
   if (!str(raw.symbol, 32) || !str(raw.rationale)) return null;
   if (raw.type === "intent") {
     if (!sideOf(raw.side) || !num(raw.size) || raw.size < 0 || !num(raw.confidence)) return null;
-    return { type: "intent", agentId, role, symbol: raw.symbol, side: raw.side, size: raw.size, confidence: raw.confidence, rationale: raw.rationale, ts };
+    return {
+      type: "intent", agentId, role, symbol: raw.symbol, side: raw.side, size: raw.size, confidence: raw.confidence, rationale: raw.rationale, ts,
+      ...(typeof raw.needsApproval === "boolean" ? { needsApproval: raw.needsApproval } : {}),
+    };
   }
   if (raw.type === "decision") {
     if (!sideOf(raw.action) || !num(raw.size) || raw.size < 0 || !num(raw.price) || raw.price <= 0 || typeof raw.riskChecked !== "boolean") return null;
@@ -84,6 +100,8 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
 }
 
 const norm = (s: string) => s.toUpperCase().replace(/\s+/g, " ").trim();
+/** A model id core actually calls (anything else runs core's stub rule). */
+export const isModelId = (id: string): boolean => /^(ollama|openrouter|openrouter-free):/.test(id);
 /** Core and the Desk share a roster; seats are matched by role. */
 export const seatOf = (s: DeskState, role: string): number => s.agents.findIndex((a) => norm(a.role) === norm(role));
 /** "BTC-USDT" → the Desk's "BTCUSDT" key, or null for anything the Desk doesn't list. */
@@ -98,7 +116,7 @@ const push = (seq: SeqEvent[], e: SeqEvent): SeqEvent[] => seq.concat([e]).slice
 export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
   return {
     core: "live",
-    seq: [{ sysText: "Connected to Bourse Core. The scripted conversation is off; you are seeing events from core's stub agents.", t: now }],
+    seq: [{ sysText: "Connected to Bourse Core. The scripted conversation is off; you are seeing core's agents: model seats talk through their model, the rest follow a stub rule and say so.", t: now }],
     fills: [],
     approvals: [],
     coreBook: {},
@@ -144,7 +162,21 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
     }
     return null;
   }
-  if (m.type === "chat") return null;
+  if (m.type === "chat") {
+    // The owner's own words (core echoes them), then any seat speaking in a floor round.
+    if (m.agentId === "OWNER") return { seq: push(s.seq, { user: m.text, t: m.ts }) };
+    const i = seatOf(s, m.role);
+    if (i < 0) return null;
+    return { seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}) }) };
+  }
+  if (m.type === "usage") {
+    const i = seatOf(s, m.role);
+    if (i < 0) return null;
+    const tokens = m.tokensToday >= 1e6 ? (m.tokensToday / 1e6).toFixed(2) + "M" : m.tokensToday >= 1e3 ? (m.tokensToday / 1e3).toFixed(1) + "k" : String(m.tokensToday);
+    const spend = m.spendToday === null ? "n/a" : "$" + (m.spendToday < 0.01 && m.spendToday > 0 ? m.spendToday.toFixed(4) : m.spendToday.toFixed(2));
+    const latency = m.latencyMs === null ? "—" : m.latencyMs >= 1000 ? (m.latencyMs / 1000).toFixed(1) + "s" : m.latencyMs + "ms";
+    return { agents: s.agents.map((a, j) => (j === i ? { ...a, tokens, spend, latency } : a)) };
+  }
 
   if (m.type === "lifecycle") {
     // Per-seat pause arrives in `config`; lifecycle only tells us about the floor as a whole.
@@ -161,7 +193,10 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
           ? {
               ...a, model: m.model, temp: m.temperature, autonomy: m.autonomy, mandate: m.mandate, paused: m.paused,
               maxClip: cm(maxClip), leverage: maxLeverage.toFixed(1) + "x", lossStop: "-" + cm(dailyLossStop),
-              tokens: "0", spend: "$0.00", latency: "—", // the stub agents never call a model
+              // Real counters arrive in `usage` messages. Until then: zero for a model seat, nothing at all for the stub rule.
+              ...(a.model === m.model && a.tokens !== "—" && isModelId(m.model)
+                ? {}
+                : isModelId(m.model) ? { tokens: "0", spend: "$0.00", latency: "—" } : { tokens: "—", spend: "—", latency: "—" }),
             }
           : a,
       ),
@@ -186,8 +221,10 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
   const t = m.ts;
 
   if (m.type === "intent") {
-    // AUTO seats' intents are followed by a decision, which is what the floor shows. Everyone else needs a human.
-    if (m.side === "HOLD" || ag.autonomy === "AUTO") return null;
+    // Core says whether a human is needed (model seats always need one). Older cores didn't: then AUTO seats'
+    // intents are followed by a decision, which is what the floor shows, and everyone else needs a human.
+    if (m.side === "HOLD") return null;
+    if (m.needsApproval === false || (m.needsApproval === undefined && ag.autonomy === "AUTO")) return null;
     const a: Approval = { id: `C${t}-${m.agentId}-${k}`, who: i, side: m.side, k, q: m.size, why: m.rationale, t, kind: ag.autonomy, mult: 1, raw: true };
     const rest = s.approvals.filter((x) => !(x.raw && x.who === i && x.k === k));
     return { approvals: rest.concat([a]).slice(-20) };

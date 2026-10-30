@@ -50,7 +50,7 @@ describe('advisor', () => {
     const calls: any[] = [];
     const a = createAdvisor({ fetcher: okFetch(GOOD, 'ollama', calls), ollamaHost: 'http://localhost:11434/' });
     const r = await a.advise('ollama:llama3.2', ctx, 0.3);
-    expect(r).toEqual({ ok: true, view: { side: 'BUY', confidence: 0.7, rationale: 'Momentum is up.' } });
+    expect(r).toMatchObject({ ok: true, view: { side: 'BUY', confidence: 0.7, rationale: 'Momentum is up.' } });
     expect(calls[0].url).toBe('http://localhost:11434/api/chat');
     expect(calls[0].body).toMatchObject({ model: 'llama3.2', stream: false, options: { temperature: 0.3 } });
     expect(JSON.stringify(calls[0])).not.toMatch(/Bearer/);
@@ -102,7 +102,7 @@ describe('advisor', () => {
     expect(await mk(async () => { throw new Error('ECONNREFUSED'); }).advise('ollama:m', ctx, 0)).toEqual({ ok: false, reason: 'ECONNREFUSED' });
     const hang: Fetcher = (_u, init) => new Promise((_res, rej) => init.signal.addEventListener('abort', () => rej(new Error('aborted'))));
     expect(await mk(hang).advise('ollama:m', ctx, 0)).toEqual({ ok: false, reason: 'timed out' });
-    expect((await mk(okFetch('lol no', 'ollama')).advise('ollama:m', ctx, 0))).toEqual({ ok: false, reason: 'reply was not the expected JSON' });
+    expect((await mk(okFetch('lol no', 'ollama')).advise('ollama:m', ctx, 0))).toMatchObject({ ok: false, reason: 'reply was not the expected JSON' });
   });
 
   it('never puts the key in the status', () => {

@@ -9,6 +9,7 @@ import { cm, fmt, fmtQty, hms, money, path } from "./format";
 import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
 import { type ResolvedTheme } from "./theme";
 import { CORE_URL } from "./secrets";
+import { isModelId } from "./core";
 import { chartGeometry, simCandles, type ChartGeo } from "./chartgeo";
 import { TF_MS, TF_TV, TIMEFRAMES, type Timeframe } from "./market";
 
@@ -53,6 +54,8 @@ export interface SelView {
   autonomy: Autonomy; paused: boolean; tools: string[];
   /** Null while core isn't connected: there is no real record to show. */
   track: TrackView | null;
+  /** What the TOKENS / SPEND / LATENCY boxes mean right now. */
+  usageNote: string;
 }
 
 export interface DeskView {
@@ -182,6 +185,11 @@ export function buildView(s: DeskState): DeskView {
     if (e.user) return { ...base, who: "YOU", role: "PORTFOLIO OWNER", text: e.user };
     if (e.sysText) return { ...base, kind: "sys", tint: ACCENT, text: e.sysText };
     if (e.reply) return { ...base, who: "Vega", role: "DEALING DIRECTOR", tint: TINTS.dir, text: e.reply };
+    if (e.say !== undefined && e.agent !== undefined && s.agents[e.agent]) {
+      // A seat speaking in core's floor conversation. The role line says who wrote it: a model, or the stub rule.
+      const a = s.agents[e.agent]!;
+      return { ...base, who: a.name.split(" ")[0]!, role: a.role + (e.model ? " · " + e.model : e.stub ? " · STUB RULE" : ""), tint: TINTS[a.grp as Grp], text: e.say };
+    }
     const m = SCRIPT[e.i as number];
     const a = s.agents[m.who];
     const row: ChatRow = { ...base, who: a.name.split(" ")[0], role: a.role, tint: TINTS[a.grp as Grp] };
@@ -358,8 +366,15 @@ export function buildView(s: DeskState): DeskView {
     temp: selAgent.temp, tokens: selAgent.tokens, spend: selAgent.spend, latency: selAgent.latency,
     maxClip: selAgent.maxClip, leverage: selAgent.leverage, lossStop: selAgent.lossStop,
     autonomy: selAgent.autonomy, paused: selAgent.paused, tools: selAgent.tools, track,
+    usageNote: !core
+      ? "Sample figures: the simulated floor makes no model calls."
+      : isModelId(selAgent.model)
+        ? "Today (UTC), counted by core. Spend shows n/a when the provider doesn't report cost; Ollama is free."
+        : "This seat runs core's stub rule: no model calls and no cost. Pick an ollama: or openrouter: model to make it think.",
   } : null;
 
+  const nModel = onFloor.filter((x) => isModelId(x.a.model)).length;
+  const coreSeats = nModel === 0 ? "stub agents (not AI)" : nModel === onFloor.length ? `${nModel} model agents` : `${nModel} model + ${onFloor.length - nModel} stub agents`;
   const lastFill = fills[0]
     ? "LAST FILL · " + fills[0].side + " " + fills[0].qty + " " + fills[0].sym + " @ " + fills[0].px + " · " + fills[0].agent
     : "";
@@ -373,7 +388,7 @@ export function buildView(s: DeskState): DeskView {
     roster, rosterCount: visible.length + " / " + onFloor.length + " AGENTS",
     chat, fills, logs, approvals, nAppr, tabs, scores, scoresNote, exportUrl: CORE_URL + "/export/ideas.jsonl",
     strip: core
-      ? "CORE FLOOR · stub agents (not AI) · paper book on real prices · not advice"
+      ? `CORE FLOOR · ${coreSeats} · paper book on real prices · not advice`
       : "SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice",
     centerMeta: (core ? "CORE" : "SIMULATED") + " · " + s.seq.length + " EVENTS",
     navStr: cm(capital + pnl), pnlStr: money(pnl), pnlColor: pnl >= 0 ? UP : DOWN,
@@ -389,7 +404,7 @@ export function buildView(s: DeskState): DeskView {
     engineState: s.halted ? "HALTED BY OPERATOR" : core ? "CORE FLOOR" : "SIMULATED FLOOR",
     engineColor: s.halted ? DOWN : ACCENT,
     feedLabel: "FEED " + s.feed + (s.feed === "SIMULATED" ? "" : " · 5s"),
-    runtimeLabel: core ? "RUNTIME BOURSE CORE (STUB AGENTS)" : "RUNTIME SIMULATED",
+    runtimeLabel: core ? `RUNTIME BOURSE CORE (${nModel ? `${nModel} MODEL / ${onFloor.length - nModel} STUB` : "STUB AGENTS"})` : "RUNTIME SIMULATED",
     lastFill,
     modeLabel: "BOURSE v" + APP_VERSION + " · " + (isLive ? "LIVE" : "DEMO · PAPER ONLY"),
     liveBanner: "LIVE · ORDERS ROUTE TO " + (venueNames || "NO VENUE").toUpperCase() + " · AGENTS ON AUTO PLACE REAL ORDERS",
