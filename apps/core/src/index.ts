@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isLoopback, loadConfig } from './config';
 import { buildServer } from './server';
+import { localMasterKey } from './secrets';
 
 // A .env file in the repo root (or apps/core) is read at start-up, so keys like OPENROUTER_API_KEY live in one place
 // instead of being typed into every terminal. Variables already set in the environment win. .env is git-ignored.
@@ -15,6 +16,15 @@ for (const f of [...new Set([resolve(here, '../../../.env'), resolve(here, '../.
 }
 
 const config = loadConfig();
+// No BOURSE_MASTER_KEY: use (or create) a local key file so Setup can save keys without extra steps.
+if (!config.masterKey && !/^(0|off|false|no)$/i.test(process.env.BOURSE_AUTO_MASTER_KEY ?? '')) {
+  const local = localMasterKey(config.dataDir);
+  if ('error' in local) console.warn(`key store off: ${local.error}`);
+  else {
+    config.masterKey = local.key;
+    if (local.created) console.log(`created ${config.dataDir}/master.key for the encrypted key store (set BOURSE_MASTER_KEY to keep the key off disk instead)`);
+  }
+}
 let core: ReturnType<typeof buildServer>;
 try {
   core = buildServer(config);

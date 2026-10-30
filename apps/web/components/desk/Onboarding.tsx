@@ -186,7 +186,7 @@ function SecretRow({ id, value, core, clear }: { id: string; value: string; core
           {st === "checking"
             ? "Checking core…"
             : st === "disabled"
-              ? "Core's key store is off: start core with BOURSE_MASTER_KEY to save keys. Until then this value stays in this tab only."
+              ? "Core's key store is off (check core's start-up log, or set BOURSE_MASTER_KEY). Until then this value stays in this tab only."
               : "Core isn't running, so this key stays in this tab only. Start it with pnpm dev:core."}
         </span>
       )}

@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { afterEach, describe, expect, it } from 'vitest';
 import { loadConfig } from '../src/config';
 import { createEngine } from '../src/engine';
-import { openSecretStore, parseMasterKey } from '../src/secrets';
+import { localMasterKey, openSecretStore, parseMasterKey } from '../src/secrets';
 import { buildServer } from '../src/server';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'bourse-secrets-'));
@@ -19,6 +19,27 @@ describe('parseMasterKey', () => {
   });
   it.each(['', 'short', 'z'.repeat(64), randomBytes(16).toString('hex'), randomBytes(31).toString('base64')])('rejects %j', (bad) => {
     expect(() => parseMasterKey(bad)).toThrow(/BOURSE_MASTER_KEY/);
+  });
+});
+
+describe('local master key (no BOURSE_MASTER_KEY)', () => {
+  it('is created once on a fresh install, reused after, and never invented for an existing store', () => {
+    const dir = join(mkdtempSync(join(tmpdir(), 'bourse-mk-')), 'data');
+    const first = localMasterKey(dir);
+    expect(first).toMatchObject({ created: true });
+    if (!('key' in first)) throw new Error('no key');
+    expect(() => parseMasterKey(first.key)).not.toThrow();
+    if (process.platform !== 'win32') expect(statSync(join(dir, 'master.key')).mode & 0o777).toBe(0o600);
+    expect(localMasterKey(dir)).toEqual({ key: first.key, created: false });
+    const store = openSecretStore({ file: join(dir, 'secrets.json'), key: parseMasterKey(first.key) });
+    store.set('model.openrouter.key', 'sk-or-x');
+    expect(readFileSync(join(dir, 'secrets.json'), 'utf8')).not.toContain('sk-or-x');
+
+    const old = mkdtempSync(join(tmpdir(), 'bourse-mk-'));
+    writeFileSync(join(old, 'secrets.json'), '{"v":1,"secrets":{}}');
+    expect(localMasterKey(old)).toMatchObject({ error: expect.stringContaining('BOURSE_MASTER_KEY') });
+    writeFileSync(join(old, 'master.key'), 'nope');
+    expect(localMasterKey(old)).toMatchObject({ error: expect.stringContaining('not a valid master key') });
   });
 });
 
