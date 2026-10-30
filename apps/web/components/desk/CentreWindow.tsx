@@ -152,6 +152,11 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
                 EXPORT IDEAS
               </a>
             )}
+            {v.scores.length > 0 && (
+              <a className="hz-btn hz-btn--sm" href={v.talkExportUrl} download title="Every model call in the floor conversation: the exact prompt, the reply, the idea and its outcome, as JSON Lines" style={{ flex: "none", textDecoration: "none" }}>
+                EXPORT TALK
+              </a>
+            )}
           </div>
           <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
             {v.scores.length > 0 && (

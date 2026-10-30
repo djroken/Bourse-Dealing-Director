@@ -90,6 +90,7 @@ export interface DeskView {
   /** Explains the scores tab: what the numbers mean, or why there are none. */
   scoresNote: string;
   exportUrl: string;
+  talkExportUrl: string;
   centerMeta: string;
   /** The honesty strip above the floor chat. */
   strip: string;
@@ -434,7 +435,7 @@ export function buildView(s: DeskState): DeskView {
     tape,
     filters: grpName.map(([id, label]) => ({ id, label, active: s.filter === id })),
     roster, rosterCount: visible.length + " / " + onFloor.length + " AGENTS",
-    chat, fills, logs, approvals, nAppr, tabs, scores, scoresNote, exportUrl: CORE_URL + "/export/ideas.jsonl",
+    chat, fills, logs, approvals, nAppr, tabs, scores, scoresNote, exportUrl: CORE_URL + "/export/ideas.jsonl", talkExportUrl: CORE_URL + "/export/talk.jsonl",
     strip: core
       ? `CORE FLOOR · ${coreSeats} · paper book on real prices · not advice`
       : "SIMULATED FLOOR · scripted agents, paper fills, real prices · not advice",

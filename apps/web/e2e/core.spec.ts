@@ -232,6 +232,7 @@ test("scorecards from core show in the SCORES tab and the agent drawer", async (
   await expect(rows.nth(0)).toContainText("+$212");
   await expect(rows.nth(1)).toContainText("GUEST · MCP");
   await expect(page.getByRole("link", { name: "EXPORT IDEAS" })).toHaveAttribute("href", /\/export\/ideas\.jsonl$/);
+  await expect(page.getByRole("link", { name: "EXPORT TALK" })).toHaveAttribute("href", /\/export\/talk\.jsonl$/);
 
   await page.locator(".hz-agent", { hasText: "Atlas Reyner" }).click();
   const drawer = page.getByRole("dialog", { name: /Atlas Reyner settings/ });

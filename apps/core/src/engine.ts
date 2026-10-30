@@ -232,15 +232,17 @@ export function createEngine(opts: EngineOptions = {}) {
 
   /** Every intent goes through here so the scorebook sees it with the market context it was made in. */
   /** `needsApproval`: true unless core is about to fill it itself (a stub seat on AUTO). Model seats always need approval. */
-  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string, needsApproval = true): void => {
+  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string, needsApproval = true): string | null => {
+    let ideaId: string | null = null;
     if (side === 'HOLD') scores.hold(ident(agent));
     else {
-      scores.idea({
+      ideaId = scores.idea({
         ...ident(agent), temperature: agent.config.temperature, autonomy: agent.config.autonomy, symbol, side, size, confidence, rationale,
         price: tick.price, change24h: tick.change24h, source: tick.source,
       });
     }
     broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence, rationale, needsApproval: side !== 'HOLD' && needsApproval, ts: now() });
+    return ideaId;
   };
 
   /** Every paper fill goes through here so the scorebook can count closes and wins. */
@@ -470,7 +472,7 @@ export function createEngine(opts: EngineOptions = {}) {
    * An idea raised in conversation becomes an intent like any other: sized by core, counted on the scorecard, and
    * (for SUGGEST/APPROVE seats, and every model seat) waiting for a human. Refused for seats that don't trade.
    */
-  const proposeIdea = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', confidence: number, rationale: string): { ok: true; size: number } | { ok: false; reason: string } => {
+  const proposeIdea = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', confidence: number, rationale: string): { ok: true; size: number; ideaId: string | null } | { ok: false; reason: string } => {
     if (!agent.config.trades || agent.external) return { ok: false, reason: 'this seat does not trade' };
     if (agent.state !== 'running') return { ok: false, reason: 'seat is not running' };
     if (!bySymbol.has(symbol)) return { ok: false, reason: 'not an instrument on this floor' };
@@ -479,8 +481,8 @@ export function createEngine(opts: EngineOptions = {}) {
     if (tick.marketOpen === false) return { ok: false, reason: 'market closed' };
     const it = sizeIntent(side, confidence, agent.config.riskLimits.maxClip, tick.price);
     if (it.side === 'HOLD') return { ok: false, reason: 'too small to size' };
-    emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, clean(rationale, 240));
-    return { ok: true, size: it.size };
+    const ideaId = emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, clean(rationale, 240));
+    return { ok: true, size: it.size, ideaId };
   };
 
   const post = (agent: FloorAgent, raw: string): { ok: true } | { ok: false; reason: string } => {
