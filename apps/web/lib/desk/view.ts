@@ -25,7 +25,7 @@ export interface AgentCard {
   spark: string; area: string; isAuto: boolean;
 }
 export interface ChatRow {
-  key: string; time: string; kind: "msg" | "trade" | "sys"; who: string; role: string; tint: string; text: string;
+  key: string; time: string; kind: "msg" | "trade" | "sys" | "round"; who: string; role: string; tint: string; text: string;
   side: Side | ""; sideBg: string; sideColor: string; ticket: string;
 }
 export interface FillRow {
@@ -186,7 +186,7 @@ export function buildView(s: DeskState): DeskView {
     };
   });
 
-  const chat: ChatRow[] = s.seq.map((e, n) => {
+  const rows: ChatRow[] = s.seq.map((e, n) => {
     const base: ChatRow = {
       key: e.t + ":" + n, time: hms(e.t), kind: "msg", who: "", role: "", tint: "var(--cE6EAEE)", text: "",
       side: "", sideBg: "", sideColor: "", ticket: "",
@@ -223,6 +223,21 @@ export function buildView(s: DeskState): DeskView {
       text: PERP(m.k) + "  " + fmtQty(m.q * scale) + " @ " + fmt(e.px, LBL[m.k].dp) + (isLive ? "" : "  · PAPER"),
       ticket: "TKT-" + String(Math.floor(e.t / 1000) % 100000).padStart(5, "0"),
     };
+  });
+
+  // A divider where each conversation round starts, so a round reads as one discussion.
+  const chat: ChatRow[] = [];
+  let lastRound: string | undefined;
+  s.seq.forEach((e, n) => {
+    if (e.round && e.round !== lastRound) {
+      const speakers = new Set(s.seq.filter((x) => x.round === e.round && x.agent !== undefined).map((x) => x.agent)).size;
+      chat.push({
+        key: "r:" + e.round + ":" + n, time: "", kind: "round", who: "", role: "", tint: MUTED, side: "", sideBg: "", sideColor: "", ticket: "",
+        text: "FLOOR ROUND · " + hms(e.t).slice(0, 5) + " UTC" + (speakers ? " · " + speakers + " speaker" + (speakers > 1 ? "s" : "") : ""),
+      });
+    }
+    if (e.round) lastRound = e.round;
+    chat.push(rows[n]!);
   });
 
   const nAppr = s.approvals.length;

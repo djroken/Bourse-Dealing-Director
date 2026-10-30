@@ -26,6 +26,8 @@ export interface SeqEvent {
   say?: string;
   model?: string;
   stub?: boolean;
+  /** Core's conversation round this line belongs to: the chat draws a divider where a new round starts. */
+  round?: string;
 }
 export interface Fill {
   side: Side;

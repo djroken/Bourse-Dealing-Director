@@ -105,6 +105,7 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                       <span style={m(9.5, undefined, "var(--c6B7681)")}>{r.who} · {r.ticket} · {r.time}</span>
                     </div>
                   )}
+                  {r.kind === "round" && <div className="hz-round" role="separator" aria-label={r.text}><span>{r.text}</span></div>}
                   {r.kind === "sys" && <div style={m(11, "0.06em", r.tint, { lineHeight: 1.5 })}>{r.text}</div>}
                 </div>
               ))}

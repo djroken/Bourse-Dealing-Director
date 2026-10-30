@@ -35,6 +35,7 @@ test("the floor conversation: the owner's instruction goes to core, the agents' 
   await expect(log).toContainText("SOL is leading the tape. Pico, is it real?");
   await expect(log).toContainText("Momentum is clean, Vega.");
   await expect(log).toContainText("STUB RULE");
+  await expect(log.getByRole("separator", { name: /FLOOR ROUND · \d\d:\d\d UTC · 3 speakers/ })).toHaveCount(1);
   await expect(log).toContainText("ollama:llama3.2");
   await expect(log).not.toContainText("Acknowledged. Routing that"); // no scripted reply on a real floor
 
