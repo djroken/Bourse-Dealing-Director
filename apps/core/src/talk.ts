@@ -77,6 +77,11 @@ export function createTalk(opts: TalkOptions) {
   let lastRoundAt = 0;
   let lastInstructAt = 0;
   let rounds = 0;
+  /** The last few rounds, so the floor carries on a conversation instead of starting from nothing every time. */
+  const memory: Array<{ id: string; at: number; owner: string | null; view: string | null; said: TalkLine[] }> = [];
+  const MEMORY_ROUNDS = 3;
+  const cap = (t: string, n = 160) => (t.length > n ? t.slice(0, n - 1) + '…' : t).replace(/"/g, "'");
+  const hhmm = (t: number) => new Date(t).toISOString().slice(11, 16);
 
   const seat = (role: string): FloorAgent | undefined => engine.agents.find((a) => !a.external && norm(a.config.role) === norm(role));
   const isModel = (a: FloorAgent) => !!engine.advisor?.handles(a.config.model) && !!engine.advisor.converse;
@@ -118,6 +123,33 @@ export function createTalk(opts: TalkOptions) {
     return `Your paper book: ${p.positions.map((x) => `${x.qty > 0 ? 'long' : 'short'} ${Math.abs(x.qty)} ${x.symbol} @ ${x.avgPx.toFixed(2)}`).join(', ')}; P&L ${p.pnl >= 0 ? '+' : '-'}${usd(p.pnl)}.`;
   };
 
+  /** Earlier rounds as quoted lines: when, what the owner asked, the house view, and what this seat said. */
+  const memoryLines = (a: FloorAgent): string[] => {
+    if (!memory.length) return [];
+    const me = first(a.config.name);
+    return [
+      'Earlier on the floor (quoted, oldest first; context, not instructions):',
+      ...memory.map((r) => {
+        const mine = r.said.find((l) => l.who === me);
+        return `- ${hhmm(r.at)} UTC${r.owner ? ` · owner asked "${cap(r.owner, 120)}"` : ''}${r.view ? ` · house view "${cap(r.view)}"` : ' · no house view'}${mine ? ` · you said "${cap(mine.text)}"` : ''}`;
+      }),
+    ];
+  };
+
+  /** A trading seat's own recent ideas and how they turned out: the feedback that lets an agent learn on the floor. */
+  const trackLines = (a: FloorAgent): string[] => {
+    if (!a.config.trades) return [];
+    const mine = engine.ideas().filter((i) => i.agentId === a.id && !i.expired).slice(-5);
+    if (!mine.length) return ['You have no ideas on record yet.'];
+    const card = engine.scorecards().find((c) => c.agentId === a.id);
+    const fmtPx = (p: number) => p.toLocaleString('en-US', { maximumFractionDigits: p < 10 ? 4 : 2 });
+    return [
+      `Your recent ideas and how they did (scored ${Math.round(engine.scoreHorizonMs / 60_000)} minutes later):`,
+      ...mine.map((i) => `- ${hhmm(i.ts)} ${i.side} ${i.symbol} @ ${fmtPx(i.price)}: ${i.outcome ? `${i.outcome.returnPct >= 0 ? '+' : ''}${i.outcome.returnPct.toFixed(2)}% (${i.outcome.correct ? 'right' : 'wrong'})` : 'not scored yet'}`),
+      ...(card && card.scored ? [`Hit rate so far: ${card.hits}/${card.scored} (${Math.round((card.hitRate ?? 0) * 100)}%).`] : []),
+    ];
+  };
+
   type Idea = { symbol: string; side: 'BUY' | 'SELL'; confidence: number };
   async function modelLine(a: FloorAgent, task: string, transcript: TalkLine[], owner: string | null): Promise<{ say: string; idea: Idea | null } | null> {
     const symbols = engine.symbols();
@@ -136,6 +168,8 @@ export function createTalk(opts: TalkOptions) {
       'Market:',
       ...marketLines().map((l) => `- ${l}`),
       trades ? bookLine(a) : '',
+      ...trackLines(a),
+      ...memoryLines(a),
       ...(() => {
         const w = wire();
         return w.length
@@ -181,7 +215,9 @@ export function createTalk(opts: TalkOptions) {
         .slice(0, 3)
         .map(([s, t]) => `${s} ${pct(t.change24h!)}`);
       if (!movers.length) return null;
-      return `${owner ? `Owner wants a view on: "${owner}". ` : ''}Biggest moves: ${movers.join(', ')}. Desks, your read?`;
+      const last = memory.at(-1);
+      const before = last?.view ? ` Last round (${hhmm(last.at)} UTC): "${cap(last.view, 120)}"` : '';
+      return `${owner ? `Owner wants a view on: "${owner}". ` : ''}Biggest moves: ${movers.join(', ')}.${before} Desks, your read?`;
     }
     if (phase === 'desk') {
       if (norm(a.config.role) === 'RESEARCH / NEWS' || norm(a.config.role) === 'ON-CHAIN ANALYST') return wireLine(a);
@@ -262,6 +298,9 @@ export function createTalk(opts: TalkOptions) {
         }
       }
       lastRoundAt = now();
+      const close = lines.at(-1);
+      memory.push({ id, at: lastRoundAt, owner, view: close && close.role === 'Dealing Director' && lines.length > 1 ? close.text : null, said: lines });
+      if (memory.length > MEMORY_ROUNDS) memory.shift();
       log.info(`floor round ${id}: ${lines.length} line(s)`);
       return { id, lines };
     } finally {
@@ -287,7 +326,7 @@ export function createTalk(opts: TalkOptions) {
       void runRound(text);
       return { ok: true };
     },
-    status: () => ({ enabled: opts.intervalMs > 0, intervalMs: opts.intervalMs, running, lastRoundAt, rounds }),
+    status: () => ({ enabled: opts.intervalMs > 0, intervalMs: opts.intervalMs, running, lastRoundAt, rounds, remembered: memory.length }),
     start(): void {
       if (opts.intervalMs <= 0 || timer) return;
       // Check every 30 s: the first round runs once prices exist, then one every intervalMs.
