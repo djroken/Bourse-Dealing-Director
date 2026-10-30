@@ -37,6 +37,7 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | POST | `/agents/resume-all` | `{ "ok": true, "resumed": <n> }` |
 | GET | `/scorecards` | `{ "horizonMs", "scorecards": [ … ] }`: every seat's paper track record (see [Scorecards](#scorecards)) |
 | GET | `/ideas?symbol=BTC-USDT&limit=200` | Recent ideas (oldest first) as a JSON array, optionally for one symbol; `limit` 1 to 1000. The Desk draws these on its chart |
+| GET | `/league` | The model league: every scored idea in the idea log plus this session, grouped by model (`rows: [{ model, ideas, hits, hitRate, avgReturnPct, seats, firstAt, lastAt }]`, best average return first). Seats without a model, and ideas the stub rule made after a model call failed, are pooled as `stub rule`, the baseline. Cached for 30 s |
 | GET | `/export/talk.jsonl` | This session's floor-conversation model calls as JSON Lines (see [Floor conversation](#floor-conversation)), each joined with its idea's outcome. `?scored=1` for calls whose idea has been scored |
 | GET | `/export/ideas.jsonl` | This session's ideas as JSON Lines, outcome `null` until scored. `?scored=1` for scored ideas only |
 | POST | `/paper/reset` | `{ "ok": true }`: every paper book and scorecard back to zero; seat settings are kept. Not undoable |

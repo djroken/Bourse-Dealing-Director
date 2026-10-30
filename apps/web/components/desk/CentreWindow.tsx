@@ -6,6 +6,7 @@ import type { DeskState } from "@/lib/desk/state";
 import type { ChatRow, DeskView } from "@/lib/desk/view";
 import { ApprovalCard, QueueClear } from "./ApprovalCard";
 import Replay from "./Replay";
+import { leagueView, useLeague } from "@/lib/desk/league";
 import { m } from "./ui";
 
 /** One floor-chat event, shared by the desktop log and the mobile chat. */
@@ -44,6 +45,38 @@ export function ChatLine({ r }: { r: ChatRow }) {
       </div>
       <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--cC9D2DA)", marginTop: 3, textWrap: "pretty" }}>{r.text}</div>
     </div>
+  );
+}
+
+/** Which model trades best on this floor: every scored idea ever, grouped by model. */
+function LeagueTable({ on }: { on: boolean }) {
+  const lv = leagueView(useLeague(on));
+  if (!on || !lv) return null;
+  return (
+    <section aria-label="Model league" style={{ marginTop: 18 }}>
+      <div style={{ padding: "0 14px 8px", display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={m(9.5, "0.16em", "var(--c98A3AD)")}>MODEL LEAGUE · ALL SESSIONS</span>
+        <span style={m(9.5, "0.04em", "var(--c6B7681)", { lineHeight: 1.5 })}>{lv.note}</span>
+      </div>
+      {lv.rows.length > 0 && (
+        <div className="hz-league-row hz-blotter-head">
+          <div>#</div><div>MODEL</div><div>IDEAS</div><div>HIT RATE</div><div>AVG MOVE</div><div>SEATS</div>
+        </div>
+      )}
+      {lv.rows.map((r) => (
+        <div key={r.key} className="hz-league-row hz-blotter-body" data-testid="league-row" data-small={r.small || undefined}>
+          <div style={{ color: "var(--c6B7681)" }}>{r.rank}</div>
+          <div style={{ minWidth: 0 }}>
+            <div className="hz-ellipsis" style={{ color: "var(--cE6EAEE)" }} title={r.key}>{r.model}</div>
+            <div style={m(8.5, "0.1em", "var(--c5D6873)", { marginTop: 2 })}>{r.kind}</div>
+          </div>
+          <div>{r.ideas}</div>
+          <div style={{ color: r.hitColor }}>{r.hit}</div>
+          <div style={{ color: r.avgColor }}>{r.avg}</div>
+          <div className="hz-ellipsis" style={{ color: "var(--c8C97A2)" }} title={r.seats}>{r.seats}</div>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -190,6 +223,7 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
                 <div style={{ textAlign: "right" }}>{r.vetoes}</div>
               </div>
             ))}
+            <LeagueTable on={s.tab === "scores" && v.coreLive} />
           </div>
         </div>
       )}

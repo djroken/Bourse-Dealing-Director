@@ -232,13 +232,13 @@ export function createEngine(opts: EngineOptions = {}) {
 
   /** Every intent goes through here so the scorebook sees it with the market context it was made in. */
   /** `needsApproval`: true unless core is about to fill it itself (a stub seat on AUTO). Model seats always need approval. */
-  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string, needsApproval = true): string | null => {
+  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string, needsApproval = true, fallback = false): string | null => {
     let ideaId: string | null = null;
     if (side === 'HOLD') scores.hold(ident(agent));
     else {
       ideaId = scores.idea({
         ...ident(agent), temperature: agent.config.temperature, autonomy: agent.config.autonomy, symbol, side, size, confidence, rationale,
-        price: tick.price, change24h: tick.change24h, source: tick.source,
+        price: tick.price, change24h: tick.change24h, source: tick.source, ...(fallback ? { fallback: true } : {}),
       });
     }
     broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence, rationale, needsApproval: side !== 'HOLD' && needsApproval, ts: now() });
@@ -281,7 +281,7 @@ export function createEngine(opts: EngineOptions = {}) {
           } else {
             log.warn(`model ${modelId} unavailable for ${agent.config.role}: ${res.reason}`);
             const m = momentumIntent(tick.change24h, clip, tick.price);
-            emitIntent(agent, symbol, tick, m.side, m.size, m.confidence, `${modelId} unavailable (${res.reason}); stub momentum rule instead`);
+            emitIntent(agent, symbol, tick, m.side, m.size, m.confidence, `${modelId} unavailable (${res.reason}); stub momentum rule instead`, true, true);
           }
         });
       return;

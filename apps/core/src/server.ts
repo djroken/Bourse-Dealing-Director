@@ -19,6 +19,7 @@ import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type Mar
 import { fetchHistory } from './replay';
 import { createTalk, type TalkCall } from './talk';
 import { createCatalog } from './catalog';
+import { createLeague } from './league';
 import { createNewsDesk, fetchFeedText, type TextFetch } from './news';
 import { VENUE_LABEL, alpacaPaper, binanceTestnet, httpFetch, type HttpFetch, type Venue, type VenueId } from './venues';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
@@ -383,6 +384,12 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     if (symbol !== undefined && !engine.symbols().includes(symbol)) return reply.code(400).send({ error: `symbol must be one of ${engine.symbols().join(', ')}` });
     const limit = Math.min(1000, Math.max(1, Number.parseInt(req.query.limit ?? '200', 10) || 200));
     return engine.ideas().filter((r) => !symbol || r.symbol === symbol).slice(-limit);
+  });
+  /** Every scored idea ever (the idea log plus this session), grouped by model: which model trades best on this floor. */
+  const league = createLeague({ file: config.ideaLog === false ? null : ideaFile, session: () => engine.ideas() });
+  server.get('/league', async () => {
+    await ideaWrites; // include lines still being written
+    return league.get();
   });
   /** This session's ideas as JSON Lines, one per idea, outcome null until it is scored. For evaluation or fine-tuning. */
   server.get<{ Querystring: { scored?: string } }>('/export/ideas.jsonl', async (req, reply) => {

@@ -458,6 +458,9 @@ describe('model seats', () => {
     const pico = ws.of('intent').filter((m) => m.agentId === 'TKT-004');
     expect(String(pico[0]!.rationale)).toContain('unavailable (ECONNREFUSED)');
     expect(ws.of('decision').filter((m) => m.agentId === 'TKT-004')).toHaveLength(0);
+    // The stub rule made this idea, so the record says so: the model league won't credit it to the model.
+    const rec = engine.ideas().filter((i) => i.agentId === 'TKT-004').at(-1);
+    expect(rec?.fallback).toBe(true);
   });
 
   it('rate-limits model calls per seat and symbol, and never overlaps them', async () => {
