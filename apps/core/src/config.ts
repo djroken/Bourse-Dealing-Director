@@ -27,6 +27,8 @@ export interface CoreConfig {
   extraCrypto?: string;
   /** US stock tickers (BOURSE_STOCKS). Only used when an Alpaca key is configured; default SPY,AAPL,NVDA,TSLA. */
   stocks?: string;
+  /** Append every model call in a floor round to <dataDir>/talk.jsonl (prompt, reply, idea). Default on. */
+  talkLog?: boolean;
   /** Minutes between floor conversation rounds (BOURSE_TALK_MIN). 0 = only when the owner asks. Default 15. */
   talkMin?: number;
   /** Route owner-approved orders to a broker paper account instead of core's paper venue. Default: core's paper venue. */
@@ -102,6 +104,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     extraCrypto: pick(env, 'BOURSE_CRYPTO'),
     stocks: pick(env, 'BOURSE_STOCKS'),
     talkMin: talkOf(pick(env, 'BOURSE_TALK_MIN')),
+    talkLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_TALK_LOG') ?? ''),
     newsFeeds: parseFeedList(pick(env, 'BOURSE_NEWS_FEEDS')),
     venues: {
       stocks: venueOf(pick(env, 'BOURSE_VENUE_STOCKS'), 'BOURSE_VENUE_STOCKS', 'alpaca-paper'),

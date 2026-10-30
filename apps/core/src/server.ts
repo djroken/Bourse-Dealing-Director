@@ -17,7 +17,7 @@ import { cryptoFeeds, fetchJson, pollFeeds, type FeedDeps, type FeedMsg } from '
 import { buildInstruments } from './instruments';
 import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
 import { fetchHistory } from './replay';
-import { createTalk } from './talk';
+import { createTalk, type TalkCall } from './talk';
 import { createCatalog } from './catalog';
 import { createNewsDesk, fetchFeedText, type TextFetch } from './news';
 import { VENUE_LABEL, alpacaPaper, binanceTestnet, httpFetch, type HttpFetch, type Venue, type VenueId } from './venues';
@@ -236,9 +236,35 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     log,
   });
   server.get('/news', async () => ({ ...news.status(), latest: news.latest().slice(0, 20) }));
+  // Training/eval log of the floor conversation: one line per model call, written as it happens. Outcomes live in
+  // ideas.jsonl (join on ideaId); /export/talk.jsonl joins them for you from this session's memory.
+  const talkFile = join(config.dataDir, 'talk.jsonl');
+  const calls: TalkCall[] = [];
+  const logCall = (rec: TalkCall): void => {
+    calls.push(rec);
+    if (calls.length > 500) calls.shift();
+    if (config.talkLog === false) return;
+    ideaWrites = ideaWrites
+      .then(() => mkdir(config.dataDir, { recursive: true, mode: 0o700 }))
+      .then(() => appendFile(talkFile, JSON.stringify(rec) + '\n', { mode: 0o600 }))
+      .catch((err: unknown) => server.log.warn(`could not write ${talkFile}: ${err instanceof Error ? err.message : String(err)}`));
+  };
+  /** This session's floor model calls as JSON Lines, each with its idea's outcome once scored. */
+  server.get<{ Querystring: { scored?: string } }>('/export/talk.jsonl', async (req, reply) => {
+    const byId = new Map(engine.ideas().map((i) => [i.id, i]));
+    const onlyScored = req.query.scored === '1' || req.query.scored === 'true';
+    const rows = calls
+      .map((c) => ({ ...c, outcome: c.ideaId ? byId.get(c.ideaId)?.outcome ?? null : null }))
+      .filter((r) => !onlyScored || r.outcome);
+    return reply
+      .header('Content-Type', 'application/x-ndjson; charset=utf-8')
+      .header('Content-Disposition', 'attachment; filename="bourse-talk.jsonl"')
+      .send(rows.map((r) => JSON.stringify(r)).join('\n') + (rows.length ? '\n' : ''));
+  });
   const talk = createTalk({
     engine,
     log,
+    onCall: logCall,
     headlines: () => news.latest(),
     intervalMs: (config.talkMin ?? 15) * 60_000,
     // Funding as % per 8h, from whatever the feed last published (Binance is per 8h, Hyperliquid per hour).

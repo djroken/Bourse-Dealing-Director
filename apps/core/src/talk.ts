@@ -25,6 +25,34 @@ export interface TalkOptions {
   funding?: () => Map<string, number>;
   /** Recent headlines from the news feeds, newest first. Untrusted text. */
   headlines?: () => Headline[];
+  /** Called once per model call in a round: the training/eval record (prompt, reply, parsed line, idea). */
+  onCall?: (rec: TalkCall) => void;
+}
+
+/**
+ * One model call on the floor, as a training/eval example: exactly what the model was given and what it answered,
+ * what core made of it, and the idea it led to. The idea's outcome is joined in later by its `ideaId` (ideas.jsonl,
+ * or /export/talk.jsonl which joins it for you).
+ */
+export interface TalkCall {
+  round: string;
+  at: number;
+  agentId: string;
+  role: string;
+  name: string;
+  model: string;
+  temperature: number;
+  task: string;
+  system: string;
+  user: string;
+  ok: boolean;
+  /** The model's raw reply (capped at 4000 characters), or null if the call failed. */
+  reply: string | null;
+  error: string | null;
+  say: string | null;
+  idea: { symbol: string; side: 'BUY' | 'SELL'; confidence: number } | null;
+  /** The scored idea this call created, if core accepted it. */
+  ideaId: string | null;
 }
 
 export interface TalkLine {
@@ -151,7 +179,7 @@ export function createTalk(opts: TalkOptions) {
   };
 
   type Idea = { symbol: string; side: 'BUY' | 'SELL'; confidence: number };
-  async function modelLine(a: FloorAgent, task: string, transcript: TalkLine[], owner: string | null): Promise<{ say: string; idea: Idea | null } | null> {
+  async function modelLine(a: FloorAgent, task: string, transcript: TalkLine[], owner: string | null, round: string): Promise<{ say: string; idea: Idea | null; rec: TalkCall } | null> {
     const symbols = engine.symbols();
     const trades = a.config.trades;
     const system =
@@ -183,13 +211,21 @@ export function createTalk(opts: TalkOptions) {
     ].filter(Boolean).join('\n');
     const res = await engine.advisor!.converse!(a.config.model, { system, user }, a.config.temperature, 240).catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed', usage: undefined }));
     engine.recordUsage(a, res.usage, res.ok ? undefined : res.reason);
+    const rec: TalkCall = {
+      round, at: now(), agentId: a.id, role: a.config.role, name: a.config.name, model: a.config.model, temperature: a.config.temperature,
+      task, system, user, ok: res.ok, reply: res.ok ? res.text.slice(0, 4000) : null, error: res.ok ? null : res.reason, say: null, idea: null, ideaId: null,
+    };
     if (!res.ok) {
       log.warn(`floor talk: ${a.config.model} unavailable for ${a.config.role}: ${res.reason}`);
+      opts.onCall?.(rec);
       return null;
     }
     const parsed = parseTalk(res.text, symbols);
-    if (!parsed) return null;
-    return { say: parsed.say, idea: trades ? parsed.idea : null };
+    if (!parsed) {
+      opts.onCall?.({ ...rec, ok: false, error: 'empty or unreadable reply' });
+      return null;
+    }
+    return { say: parsed.say, idea: trades ? parsed.idea : null, rec };
   }
 
   /**
@@ -276,13 +312,18 @@ export function createTalk(opts: TalkOptions) {
             ? `Open the round: frame what matters in this market${owner ? ' and the owner\'s request' : ''}, and ask the desks for their read.`
             : phase === 'risk' ? 'Give the risk view: exposure, concentration, anything that worries you. Push back on ideas you think are too much.'
             : 'Give your desk\'s read. Answer what colleagues said where it matters.';
-          const r = await modelLine(a, task, lines, owner);
+          const r = await modelLine(a, task, lines, owner, id);
           if (r) {
             say(a, r.say, a.config.model);
+            let ideaId: string | null = null;
             if (r.idea) {
               const p = engine.proposeIdea(a, r.idea.symbol, r.idea.side, r.idea.confidence, `${a.config.model} in floor talk: ${r.say}`);
-              if (p.ok) leans.push({ who: first(a.config.name), symbol: r.idea.symbol, side: r.idea.side });
+              if (p.ok) {
+                leans.push({ who: first(a.config.name), symbol: r.idea.symbol, side: r.idea.side });
+                ideaId = p.ideaId;
+              }
             }
+            opts.onCall?.({ ...r.rec, say: r.say.slice(0, 480), idea: r.idea, ideaId });
           }
         } else {
           say(a, stubLine(a, phase, owner, leans), null);
@@ -291,8 +332,11 @@ export function createTalk(opts: TalkOptions) {
       const director = seat('Dealing Director');
       if (director && director.state === 'running') {
         if (isModel(director)) {
-          const r = await modelLine(director, 'Close the round with the house view in one or two sentences: what the floor agrees on, what it does not, and what goes to the owner.', lines, owner);
-          if (r) say(director, r.say, director.config.model);
+          const r = await modelLine(director, 'Close the round with the house view in one or two sentences: what the floor agrees on, what it does not, and what goes to the owner.', lines, owner, id);
+          if (r) {
+            say(director, r.say, director.config.model);
+            opts.onCall?.({ ...r.rec, say: r.say.slice(0, 480) });
+          }
         } else {
           say(director, stubLine(director, 'close', owner, leans), null);
         }

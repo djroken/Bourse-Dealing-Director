@@ -4,7 +4,7 @@ import { AgentChatMsgSchema, AgentIntentSchema, AgentUsageMsgSchema } from 'shar
 import { loadConfig } from '../src/config';
 import { createEngine, type FloorSocket } from '../src/engine';
 import type { Advisor } from '../src/models';
-import { createTalk, parseTalk } from '../src/talk';
+import { createTalk, parseTalk, type TalkCall } from '../src/talk';
 import { buildServer } from '../src/server';
 
 class FakeSocket implements FloorSocket {
@@ -224,6 +224,9 @@ describe('server: talk over the socket', () => {
       expect(st).toMatchObject({ rounds: 1, enabled: false });
       expect((await fetch(`http://127.0.0.1:${port}/floor/round`, { method: 'POST', headers: { Origin: 'https://evil.example' } })).status).toBe(403);
       expect((await fetch(`http://127.0.0.1:${port}/floor/round`, { method: 'POST' })).status).toBe(202);
+      const exp = await fetch(`http://127.0.0.1:${port}/export/talk.jsonl`);
+      expect(exp.headers.get('content-type')).toContain('application/x-ndjson');
+      expect(await exp.text()).toBe(''); // stub seats make no model calls, so nothing to export
     } finally {
       await core.stop();
     }
