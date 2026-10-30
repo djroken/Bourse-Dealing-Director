@@ -1038,7 +1038,13 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  /* On a short window the chart keeps a usable height and the news gives way; past that the rail scrolls. */
+  overflow-y: auto;
+  scrollbar-width: thin;
 }
+.hz-rail-chart { min-height: 330px; }
+.hz-rail-chart-body { flex: 1; min-height: 210px; padding: 8px; }
+.hz-rail-news { min-height: 170px; }
 .hz-chartstats {
   flex: none;
   display: flex;

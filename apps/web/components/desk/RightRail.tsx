@@ -18,7 +18,7 @@ export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: D
   const c = v.chart;
   return (
     <section className="hz-rail">
-      <div className="hz-panel hz-glass" style={{ flex: 1.15 }}>
+      <div className="hz-panel hz-glass hz-rail-chart" style={{ flex: "1.15 0 auto" }}>
         <div className="hz-panel-head" style={{ padding: "0 12px" }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 9 }}>
             <span style={m(11.5, "0.1em", "var(--cE6EAEE)")}>{c.label}</span>
@@ -32,7 +32,7 @@ export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: D
         <div style={{ padding: "6px 8px 0" }}>
           <ChartTools s={s} v={v} a={a} />
         </div>
-        <div style={{ flex: 1, minHeight: 0, padding: 8 }}>
+        <div className="hz-rail-chart-body">
           {s.chartFull ? <div className="hz-chart-away">Chart is open full screen</div> : <ChartBody s={s} v={v} />}
         </div>
         <div className="hz-chartstats">
@@ -42,7 +42,7 @@ export default function RightRail({ s, v, a }: { s: DeskState; v: DeskView; a: D
         </div>
       </div>
 
-      <div className="hz-panel hz-glass" style={{ flex: 1 }}>
+      <div className="hz-panel hz-glass hz-rail-news" style={{ flex: "1 1 0" }}>
         <div className="hz-panel-head" style={{ height: 34, padding: "0 12px" }}>
           <span style={m(10, "0.18em", "var(--c98A3AD)")}>NEWS FEED</span>
           <span style={m(9, "0.12em", "var(--c7C8894)")} data-testid="news-label">{v.news.label}</span>

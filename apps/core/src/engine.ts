@@ -270,7 +270,7 @@ export function createEngine(opts: EngineOptions = {}) {
         .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed' }))
         .then((res) => {
           inFlight.delete(key);
-          recordUsage(agent, 'usage' in res ? res.usage : undefined);
+          recordUsage(agent, 'usage' in res ? res.usage : undefined, res.ok ? undefined : res.reason);
           if (agent.state !== 'running' || agent.config.model !== modelId) return; // halted, paused or re-pointed while waiting
           const clip = agent.config.riskLimits.maxClip;
           if (res.ok) {
@@ -413,7 +413,7 @@ export function createEngine(opts: EngineOptions = {}) {
   };
 
   // ---- model usage per seat, today (UTC) --------------------------------------------------------------------------
-  interface Usage { day: string; calls: number; tokens: number; spend: number; spendKnown: boolean; latencyMs: number | null }
+  interface Usage { day: string; calls: number; tokens: number; spend: number; spendKnown: boolean; latencyMs: number | null; error: string | null }
   const usageBy = new Map<string, Usage>();
   const usageSent = new Map<string, number>();
   const usageMsg = (a: FloorAgent): FloorMsg => {
@@ -422,15 +422,25 @@ export function createEngine(opts: EngineOptions = {}) {
     const cur = u && u.day === today ? u : null;
     return {
       type: 'usage', agentId: a.id, role: a.config.role, callsToday: cur?.calls ?? 0, tokensToday: cur?.tokens ?? 0,
-      spendToday: cur ? (cur.spendKnown ? Number(cur.spend.toFixed(6)) : null) : 0, latencyMs: u?.latencyMs ?? null, ts: now(),
+      spendToday: cur ? (cur.spendKnown ? Number(cur.spend.toFixed(6)) : null) : 0, latencyMs: u?.latencyMs ?? null, lastError: u?.error ?? null, ts: now(),
     };
   };
-  /** Count one model call against a seat and tell clients (at most once a second per seat). */
-  const recordUsage = (a: FloorAgent, u: ModelUsage | undefined): void => {
-    if (!u) return;
+  /**
+   * Count one model call against a seat and tell clients (at most once a second per seat). A failed call passes its
+   * reason instead, so the Desk can say why a seat isn't talking (no key, model gone, rate limit) rather than go quiet.
+   */
+  const recordUsage = (a: FloorAgent, u: ModelUsage | undefined, error?: string): void => {
+    if (!u && !error) return;
     const today = new Date(now()).toISOString().slice(0, 10);
     let cur = usageBy.get(a.id);
-    if (!cur || cur.day !== today) cur = { day: today, calls: 0, tokens: 0, spend: 0, spendKnown: true, latencyMs: null };
+    if (!cur || cur.day !== today) cur = { day: today, calls: 0, tokens: 0, spend: 0, spendKnown: true, latencyMs: null, error: null };
+    const before = cur.error;
+    cur.error = error ? clean(error, 200) : null;
+    if (!u) {
+      usageBy.set(a.id, cur);
+      if (cur.error !== before) broadcast(usageMsg(a));
+      return;
+    }
     cur.calls += 1;
     cur.tokens += Math.round(u.promptTokens + u.completionTokens);
     if (u.costUsd === null) cur.spendKnown = false;
@@ -438,7 +448,7 @@ export function createEngine(opts: EngineOptions = {}) {
     cur.latencyMs = Math.round(u.latencyMs);
     usageBy.set(a.id, cur);
     const t = now();
-    if (t - (usageSent.get(a.id) ?? 0) >= 1000) {
+    if (t - (usageSent.get(a.id) ?? 0) >= 1000 || before !== null) {
       usageSent.set(a.id, t);
       broadcast(usageMsg(a));
     }

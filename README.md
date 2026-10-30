@@ -66,7 +66,17 @@ pnpm dev
 
 To watch the agent floor stream from core: `pnpm watch:core`.
 
-Configuration is optional and lives in environment variables; see [.env.example](.env.example).
+Configuration is optional. Copy [.env.example](.env.example) to `.env` in the repo folder and fill in what you need; core reads it on start (variables set in your shell win). `.env` is git-ignored.
+
+### Give the agents a brain (free)
+
+Seats run a simple stub rule until you give them a model. No GPU needed:
+
+1. Make a free key at [openrouter.ai](https://openrouter.ai) and put `OPENROUTER_API_KEY=sk-or-…` in `.env`, then restart `pnpm dev`.
+2. Click a seat, open the **Model** list and pick one under **OpenRouter · free** (the list comes live from OpenRouter). The drawer says whether core has the key, and shows the reason if a call fails.
+3. Type a question in the floor chat. The seats you gave a model answer through it; the rest are labelled STUB RULE.
+
+If you have the RAM, [Ollama](https://ollama.com) works too: installed models show under **Ollama on this machine**.
 
 ### Commands
 

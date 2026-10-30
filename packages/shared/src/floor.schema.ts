@@ -95,6 +95,8 @@ export const AgentUsageMsgSchema = z.object({
   tokensToday: z.number().int().nonnegative(),
   spendToday: z.number().nonnegative().nullable(),
   latencyMs: z.number().nonnegative().nullable(),
+  /** Why the seat's last model call failed (no key, unknown model, rate limit…), or null when it worked. */
+  lastError: z.string().max(200).nullable().optional(),
   ts: z.number(),
 });
 
