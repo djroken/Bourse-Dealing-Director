@@ -591,7 +591,9 @@ a:hover {
   flex: 1.45 1 0;
   min-width: 460px;
   border-color: rgba(255, 158, 44, 0.18);
+  container: centre / inline-size;
 }
+
 .hz-tabs {
   flex: 0 1 auto;
   min-width: 0;
@@ -706,10 +708,15 @@ a:hover {
 /* Blotter */
 .hz-blotter-row {
   display: grid;
-  grid-template-columns: 78px 60px 1.1fr 80px 90px 90px 1fr 88px;
+  /* Every column has a floor, so a narrow centre window scrolls sideways instead of letting cells run into each other. */
+  grid-template-columns: 62px 38px minmax(84px, 1.2fr) minmax(56px, 0.8fr) minmax(66px, 0.9fr) minmax(56px, 0.8fr) minmax(72px, 1fr) 92px;
+  column-gap: 10px;
+  align-items: baseline;
+  min-width: 620px;
   padding: 9px 14px;
   white-space: nowrap;
 }
+.hz-blotter-row > div { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .hz-blotter-head {
   position: sticky;
   top: 0;
@@ -730,7 +737,13 @@ a:hover {
 .hz-blotter-body:hover {
   background: var(--w03);
 }
-
+/* A narrow centre window (laptops, or with the agent drawer open): tighter tabs, and the blotter drops its TIME column
+   (rows are newest first, and the chat and console keep the times) so every other column fits without scrolling. */
+@container centre (max-width: 620px) {
+  .hz-tab { padding: 0 8px; letter-spacing: 0.08em; }
+  .hz-blotter-row { grid-template-columns: 36px minmax(76px, 1.2fr) minmax(48px, 0.8fr) minmax(60px, 0.9fr) minmax(48px, 0.8fr) minmax(64px, 1fr) 84px; column-gap: 8px; min-width: 0; }
+  .hz-blotter-row > .hz-bl-time { display: none; }
+}
 /* Chart: tools, native candles, signal markers, full screen */
 .hz-charttools {
   display: flex;

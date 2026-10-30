@@ -119,20 +119,20 @@ export default function CentreWindow({ s, v, a }: { s: DeskState; v: DeskView; a
       )}
 
       {s.tab === "blotter" && (
-        <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
           <div className="hz-blotter-row hz-blotter-head hz-glass">
-            <div>TIME</div><div>SIDE</div><div>INSTRUMENT</div><div>QTY</div><div>PRICE</div><div>P&amp;L</div><div>AGENT</div>
+            <div className="hz-bl-time">TIME</div><div>SIDE</div><div>INSTRUMENT</div><div>QTY</div><div>PRICE</div><div>P&amp;L</div><div>AGENT</div>
             <div style={{ textAlign: "right" }}>STATUS</div>
           </div>
           {v.fills.map((f) => (
             <div key={f.key} className="hz-blotter-row hz-blotter-body">
-              <div style={{ color: "var(--c6B7681)" }}>{f.time}</div>
+              <div className="hz-bl-time" style={{ color: "var(--c6B7681)" }}>{f.time}</div>
               <div style={{ fontWeight: 600, color: f.sideColor }}>{f.side}</div>
               <div style={{ color: "var(--cE6EAEE)" }}>{f.sym}</div>
               <div>{f.qty}</div>
               <div>{f.px}</div>
               <div style={{ color: f.pnlColor }}>{f.pnl}</div>
-              <div style={{ color: "var(--c8C97A2)" }}>{f.agent}</div>
+              <div style={{ color: "var(--c8C97A2)" }} title={f.agent}>{f.agentShort}</div>
               <div style={{ textAlign: "right", fontSize: 9.5, letterSpacing: "0.1em", color: f.stColor }}>{f.status}</div>
             </div>
           ))}

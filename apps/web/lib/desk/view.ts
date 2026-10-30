@@ -30,6 +30,8 @@ export interface ChatRow {
 }
 export interface FillRow {
   key: string; time: string; side: Side; sym: string; qty: string; px: string; pnl: string; agent: string;
+  /** First name for the blotter (guests keep their full label). */
+  agentShort: string;
   status: string; sideColor: string; pnlColor: string; stColor: string;
 }
 export interface ScoreRow {
@@ -234,7 +236,7 @@ export function buildView(s: DeskState): DeskView {
     const pnl = (fl.side === "BUY" ? 1 : -1) * fl.q * (now - fl.px) * sc;
     return {
       key: fl.t + ":" + n, time: hms(fl.t), side: fl.side, sym: PERP(fl.k), qty: fmtQty(fl.q * sc),
-      px: fmt(fl.px, LBL[fl.k].dp), pnl: money(pnl), agent: fl.agent, status: isLive ? fl.status : fl.venue === "binance-testnet" ? "TESTNET" : fl.venue === "alpaca-paper" ? "ALPACA PAPER" : "PAPER",
+      px: fmt(fl.px, LBL[fl.k].dp), pnl: money(pnl), agent: fl.agent, agentShort: /\(guest\)$/.test(fl.agent) ? fl.agent : fl.agent.split(" ")[0] ?? fl.agent, status: isLive ? fl.status : fl.venue === "binance-testnet" ? "TESTNET" : fl.venue === "alpaca-paper" ? "ALPACA PAPER" : "PAPER",
       sideColor: fl.side === "SELL" ? DOWN : UP, pnlColor: pnl < 0 ? DOWN : UP,
       stColor: fl.status === "SETTLED" ? "var(--c5D6873)" : "var(--c9AA5B1)",
     };
