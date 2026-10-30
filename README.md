@@ -34,7 +34,7 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Chart | **Working** | TradingView or native candles, 1m to 1D, full screen (Esc to close). With core running, the native chart shows the agents' ideas as ▲/▼ markers, coloured by whether they turned out right, with the full list beside it in full screen |
 | Approvals queue | **Working** | SUGGEST and APPROVE agents send trades to the queue; AUTO agents fill immediately (paper) |
 | Setup flow (six steps) | **Working, not connected** | Choices are saved on your device but nothing reads them yet. Secrets stay in memory unless you save them to core's encrypted store |
-| Encrypted key store (core) | **Working; the OpenRouter adapter reads from it** | AES-256-GCM at rest, write-only over HTTP. Needs `BOURSE_MASTER_KEY` |
+| Encrypted key store (core) | **Working** | Keys saved in Setup go to core, encrypted at rest (AES-256-GCM) and write-only over HTTP. Core makes a local master key on first run; set `BOURSE_MASTER_KEY` to keep it off disk |
 | Market prices and candles | **Real** | Crypto fetched by your browser from the public Binance, Coinbase, Hyperliquid and Frankfurter APIs, falling back to a labelled simulated feed. Stocks and any extra coins come through core |
 | Markets | **Crypto working; US stocks working with a free Alpaca key; FX not yet** | BTC, ETH, SOL, BNB and XRP out of the box, plus any Binance coin you add with `BOURSE_CRYPTO`. Add a free Alpaca paper-account key in Setup (Market data → Alpaca) and restart core to trade SPY, AAPL, NVDA and TSLA (or your own `BOURSE_STOCKS`) on paper, with live quotes, charts and replay. Agents only act on stocks while the US market is open. FX has no free intraday source yet. See [docs/core-api.md](docs/core-api.md#markets) |
 | Floor conversation | **Working, when core is running** | The agents talk to each other in rounds: every 15 minutes (`BOURSE_TALK_MIN`) or whenever you type in the floor chat. Seats on a model (Ollama or OpenRouter) read the market and what the others said, reply to each other and can propose a trade, which goes to your queue. Seats without a model speak from real data and are labelled STUB RULE. What one agent says is quoted to the next as data, never as instructions. The drawer shows each model seat's real calls, tokens, spend and latency. See [docs/core-api.md](docs/core-api.md#floor-conversation) |
@@ -72,7 +72,7 @@ Configuration is optional. Copy [.env.example](.env.example) to `.env` in the re
 
 Seats run a simple stub rule until you give them a model. No GPU needed:
 
-1. Make a free key at [openrouter.ai](https://openrouter.ai) and put `OPENROUTER_API_KEY=sk-or-…` in `.env`, then restart `pnpm dev`.
+1. Make a free key at [openrouter.ai](https://openrouter.ai) and save it in Setup (step 02, OpenRouter, SAVE TO CORE). Or put `OPENROUTER_API_KEY=sk-or-…` in `.env` and restart `pnpm dev`.
 2. Click a seat, open the **Model** list and pick one under **OpenRouter · free** (the list comes live from OpenRouter). The drawer says whether core has the key, and shows the reason if a call fails.
 3. Type a question in the floor chat. The seats you gave a model answer through it; the rest are labelled STUB RULE.
 
@@ -124,7 +124,7 @@ flowchart LR
 
 - **No real orders.** Nothing in this repository can send an order to an exchange or move funds.
 - **Core has no authentication.** It binds to `127.0.0.1` by default, checks the browser `Origin` on WebSocket connections and state-changing requests, and warns if you expose it. Don't put it on a network without adding authentication in front of it.
-- **Secrets.** Anything you type into the setup flow is kept in memory in your browser tab and never written to browser storage. If you run core with `BOURSE_MASTER_KEY` set, you can save a key to core's store: it is encrypted at rest (AES-256-GCM), the master key never touches disk, and the API can write and delete keys but never read them back. The OpenRouter adapter reads its key from the store; nothing else uses stored keys yet, and there are no exchange integrations. Core has no login, so keep it on localhost.
+- **Secrets.** Anything you type into the setup flow is kept in memory in your browser tab and never written to browser storage. SAVE TO CORE puts a key in core's store: it is encrypted at rest (AES-256-GCM), and the API can write and delete keys but never read them back. By default the master key is a local file core creates (`.bourse/master.key`), which guards against casual copying but not against someone who can read that folder; set `BOURSE_MASTER_KEY` yourself to keep it off disk. The OpenRouter adapter reads its key from the store; nothing else uses stored keys yet, and there are no exchange integrations. Core has no login, so keep it on localhost.
 - **The risk gate fails closed.** Core vetoes an AUTO decision once an agent's daily loss reaches its stop, and treats bad input as a veto. It is covered by tests.
 - **Data comes from third parties.** Prices are fetched from public endpoints you don't control, and can be wrong, late or unavailable. The desk labels the feed it is using and says when it has fallen back to simulated prices.
 

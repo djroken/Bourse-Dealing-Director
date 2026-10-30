@@ -10,7 +10,8 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 |---|---|---|
 | `CORE_HOST` | `127.0.0.1` | Interface to bind. Leave on loopback unless you add your own auth and TLS in front. |
 | `CORE_PORT` | `4000` | Port. |
-| `BOURSE_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64). Enables the secret store. `pnpm --filter core keygen` makes one. |
+| `BOURSE_MASTER_KEY` | unset | 32 random bytes (64 hex chars or base64) for the secret store. `pnpm --filter core keygen` makes one. Unset, core uses `<BOURSE_DATA_DIR>/master.key`, creating it (0600) on a fresh install, so Setup can save keys straight away. That stops casual copying of `secrets.json` but not someone who can read the folder: set the variable yourself to keep the key off disk. |
+| `BOURSE_AUTO_MASTER_KEY` | on | `off` stops core from creating or using `master.key`: the key store then needs `BOURSE_MASTER_KEY`. |
 | `BOURSE_MCP_TOKEN` | unset | 16+ random characters. Switches on `/mcp` for guest agents. |
 | `BOURSE_DATA_DIR` | `.bourse` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
 | `BOURSE_CRYPTO` | unset | Extra coins with a Binance USDT market, comma-separated (e.g. `DOGE,ADA`), on top of BTC, ETH, SOL, BNB, XRP. Up to 12. |

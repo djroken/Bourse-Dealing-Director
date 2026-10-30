@@ -6,7 +6,8 @@ import { dirname } from 'node:path';
  * Encrypted-at-rest store for API keys and tokens.
  *
  * AES-256-GCM, one random 96-bit IV per write, the secret's id bound in as additional authenticated data so a
- * ciphertext can't be swapped between ids. The master key comes from the environment and is never written to disk.
+ * ciphertext can't be swapped between ids. The master key comes from BOURSE_MASTER_KEY or, when that isn't set, from a
+ * local key file core creates on first run (see `localMasterKey`).
  * Values can be written and deleted over HTTP but are never returned by it: only the server-side execution layer
  * (which doesn't exist yet) calls `get`.
  */
@@ -123,4 +124,35 @@ export function openSecretStore(opts: { file: string; key: Buffer; now?: () => n
         .sort((a, b) => a.id.localeCompare(b.id));
     },
   };
+}
+
+/**
+ * When BOURSE_MASTER_KEY isn't set, use `<dataDir>/master.key`, creating it (0600) on a fresh install so saving a key in
+ * Setup just works. This protects keys from casual copying of secrets.json, not from someone who can read the folder:
+ * for that, set BOURSE_MASTER_KEY yourself and keep it off disk. Never creates a key next to an existing store it
+ * couldn't open, since that would only make the old secrets unreadable.
+ */
+export function localMasterKey(dataDir: string): { key: string; created: boolean } | { error: string } {
+  const keyFile = `${dataDir}/master.key`;
+  if (existsSync(keyFile)) {
+    const raw = readFileSync(keyFile, 'utf8').trim();
+    try {
+      parseMasterKey(raw);
+      return { key: raw, created: false };
+    } catch {
+      return { error: `${keyFile} is not a valid master key: fix or remove it` };
+    }
+  }
+  if (existsSync(`${dataDir}/secrets.json`)) {
+    return { error: `${dataDir}/secrets.json exists but there is no master key for it: set BOURSE_MASTER_KEY to the key it was made with` };
+  }
+  mkdirSync(dataDir, { recursive: true });
+  const key = randomBytes(32).toString('hex');
+  writeFileSync(keyFile, key + '\n', { mode: 0o600, flag: 'wx' });
+  try {
+    chmodSync(keyFile, 0o600);
+  } catch {
+    /* Windows: permissions are inherited from the folder */
+  }
+  return { key, created: true };
 }

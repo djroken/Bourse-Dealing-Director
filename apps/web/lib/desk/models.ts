@@ -58,7 +58,7 @@ export function keyLine(cat: ModelCatalog | null, model: string): { text: string
   if (model.startsWith("openrouter")) {
     return cat.openrouterKey
       ? { ok: true, text: "OpenRouter key: found in core." }
-      : { ok: false, text: "OpenRouter key: core doesn't have it, so this seat can't call the model. Add OPENROUTER_API_KEY=sk-or-… to a file called .env in the Bourse folder and restart pnpm dev (or save it in Setup, which needs BOURSE_MASTER_KEY)." };
+      : { ok: false, text: "OpenRouter key: core doesn't have it, so this seat can't call the model. Save it in Setup (step 02, SAVE TO CORE), or add OPENROUTER_API_KEY=sk-or-… to a file called .env in the Bourse folder and restart pnpm dev." };
   }
   if (model.startsWith("ollama:")) {
     return cat.ollamaUp ? { ok: true, text: "Ollama: running on this machine." } : { ok: false, text: "Ollama isn't running on this machine, so this seat can't call the model." };
