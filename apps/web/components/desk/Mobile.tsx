@@ -9,6 +9,28 @@ import { ChartBody, ChartToggle, ChartTools } from "./Chart";
 import { GlassSlider, ThemeSwitch } from "./Footer";
 import { m } from "./ui";
 import { ChatLine } from "./CentreWindow";
+import { leagueView, useLeague } from "@/lib/desk/league";
+
+/** The model league as compact rows for the phone. */
+function MobileLeague({ on }: { on: boolean }) {
+  const lv = leagueView(useLeague(on));
+  if (!on || !lv) return null;
+  return (
+    <>
+      <div style={m(9.5, "0.18em", "var(--c98A3AD)", { padding: "6px 2px 0" })}>MODEL LEAGUE · ALL SESSIONS</div>
+      <div style={m(10, "0.04em", "var(--c6B7681)", { padding: "0 2px", lineHeight: 1.5 })}>{lv.note}</div>
+      {lv.rows.map((r) => (
+        <div key={r.key} className="hz-mfill" data-testid="m-league-row" style={{ opacity: r.small ? 0.72 : 1 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
+            <span className="hz-ellipsis" style={m(12, undefined, "var(--cE6EAEE)", { whiteSpace: "nowrap" })}>{r.rank}. {r.model}</span>
+            <span className="hz-ellipsis" style={m(9.5, undefined, "var(--c6B7681)", { whiteSpace: "nowrap" })}>{r.kind} · {r.ideas} ideas · HIT <span style={{ color: r.hitColor }}>{r.hit}</span></span>
+          </div>
+          <span style={m(12.5, undefined, r.avgColor, { flex: "none" })}>{r.avg}</span>
+        </div>
+      ))}
+    </>
+  );
+}
 
 const TABS: Array<[MobileTab, string]> = [["floor", "FLOOR"], ["chat", "CHAT"], ["approvals", "QUEUE"], ["markets", "MARKETS"], ["more", "MORE"]];
 
@@ -167,6 +189,7 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                 <span style={m(12.5, undefined, r.pnlColor, { flex: "none" })}>{r.pnl}</span>
               </div>
             ))}
+            <MobileLeague on={s.mTab === "markets" && v.coreLive} />
             <div style={m(9.5, "0.18em", "var(--c98A3AD)", { padding: "6px 2px 0" })}>RECENT FILLS</div>
             {v.fills.slice(0, 8).map((f) => (
               <div key={f.key} className="hz-mfill">
