@@ -46,6 +46,11 @@ export function parseModelRef(id: string): ModelRef | undefined {
 
 /** OpenRouter bills anything that isn't a `:free` variant. */
 export const isFreeOpenRouterModel = (model: string): boolean => /^[\w.\-/]+:free$/i.test(model);
+/** A seat id that calls one of OpenRouter's free models (they share a small daily allowance). */
+export const isFreeModelId = (id: string): boolean => {
+  const ref = parseModelRef(id);
+  return !!ref && ref.provider === 'openrouter' && isFreeOpenRouterModel(ref.model);
+};
 
 export type Fetcher = (url: string, init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal }) => Promise<{
   ok: boolean;
@@ -61,6 +66,11 @@ export interface AdvisorOptions {
   openrouterKey?: () => string | undefined;
   /** Max calls per provider per UTC day. 0 means unlimited (only meaningful for local Ollama). */
   dailyCap?: { ollama: number; openrouter: number };
+  /**
+   * Calls a day to OpenRouter's free models, across all seats (0 = no limit). OpenRouter allows 50 a day on an account
+   * that has bought less than $10 of credits and 1,000 with more; the default stays just under 50.
+   */
+  freeDailyCap?: number;
   timeoutMs?: number;
 }
 
@@ -80,7 +90,9 @@ export interface Advisor {
   advise(modelId: string, ctx: MarketContext, temperature: number): Promise<AdvisorResult>;
   /** A free-form reply for the floor conversation. The caller parses and cleans it; nothing here trusts the text. */
   converse?(modelId: string, prompt: { system: string; user: string }, temperature: number, maxTokens?: number): Promise<ConverseResult>;
-  status(): { ollama: { host: string; used: number; cap: number }; openrouter: { keySet: boolean; used: number; cap: number } };
+  status(): { ollama: { host: string; used: number; cap: number }; openrouter: { keySet: boolean; used: number; cap: number; free?: { used: number; cap: number } } };
+  /** Free-model calls left today, or null when there is no limit. */
+  freeLeft?(): number | null;
 }
 
 const defaultFetcher: Fetcher = (url, init) => fetch(url, init);
@@ -131,12 +143,14 @@ export function createAdvisor(opts: AdvisorOptions = {}): Advisor {
   const ollamaHost = (opts.ollamaHost ?? 'http://127.0.0.1:11434').replace(/\/$/, '');
   const cap = opts.dailyCap ?? { ollama: 0, openrouter: 200 }; // a runaway-loop guard, not a policy: raise it or set 0 for unlimited
   const timeoutMs = opts.timeoutMs ?? 30_000;
-  const usage: Record<ProviderName, { day: string; n: number }> = {
+  const freeCap = opts.freeDailyCap ?? 45;
+  const usage: Record<ProviderName | 'free', { day: string; n: number }> = {
     ollama: { day: utcDay(now()), n: 0 },
     openrouter: { day: utcDay(now()), n: 0 },
+    free: { day: utcDay(now()), n: 0 },
   };
 
-  const used = (p: ProviderName): number => {
+  const used = (p: ProviderName | 'free'): number => {
     const u = usage[p];
     const today = utcDay(now());
     if (u.day !== today) {
@@ -184,6 +198,11 @@ export function createAdvisor(opts: AdvisorOptions = {}): Advisor {
       const key = opts.openrouterKey?.();
       if (!key) return { ok: false, reason: 'no OpenRouter key saved in core' };
       if (overCap('openrouter')) return { ok: false, reason: `daily cap of ${cap.openrouter} OpenRouter calls reached` };
+      const free = isFreeOpenRouterModel(ref.model);
+      if (free && freeCap > 0 && used('free') >= freeCap) {
+        return { ok: false, reason: `today's free-model budget is used (${freeCap} calls; OpenRouter allows 50 a day without credits). Resets at 00:00 UTC. With $10+ of OpenRouter credits you get 1,000: raise OPENROUTER_FREE_DAILY_CAP` };
+      }
+      if (free) usage.free.n++;
       usage.openrouter.n++; // count the attempt, not the success: a failing call still spends quota
       const res = await post('https://openrouter.ai/api/v1/chat/completions', { Authorization: `Bearer ${key}` }, { model: ref.model, messages, temperature, max_tokens: maxTokens, usage: { include: true } });
       if (!res.ok) return res;
@@ -215,7 +234,8 @@ export function createAdvisor(opts: AdvisorOptions = {}): Advisor {
 
     status: () => ({
       ollama: { host: ollamaHost, used: used('ollama'), cap: cap.ollama },
-      openrouter: { keySet: !!opts.openrouterKey?.(), used: used('openrouter'), cap: cap.openrouter },
+      openrouter: { keySet: !!opts.openrouterKey?.(), used: used('openrouter'), cap: cap.openrouter, free: { used: used('free'), cap: freeCap } },
     }),
+    freeLeft: () => (freeCap > 0 ? Math.max(0, freeCap - used('free')) : null),
   };
 }

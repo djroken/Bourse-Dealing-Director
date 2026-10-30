@@ -463,6 +463,20 @@ describe('model seats', () => {
     expect(rec?.fallback).toBe(true);
   });
 
+  it('a seat on a free OpenRouter model makes no background calls (it saves the allowance for floor talk) unless allowed', async () => {
+    const mk = (freeBackground: boolean) => {
+      const calls: string[] = [];
+      const advisor = { handles: (id: string) => id.startsWith('openrouter'), advise: async (id: string) => (calls.push(id), view('BUY')), status: () => ({}) as any };
+      const engine = createEngine({ cooldownMs: 0, modelCooldownMs: 0, advisor, freeBackground });
+      engine.agents.find((a) => a.config.role === 'Quant / Signals')!.config.model = 'openrouter-free:meta-llama/llama-3.3-70b-instruct:free';
+      engine.agents.find((a) => a.config.role === 'Market Maker')!.config.model = 'openrouter:anthropic/claude-sonnet-4.5';
+      engine.pushTick('BTC-USDT', tick());
+      return calls;
+    };
+    expect(mk(false)).toEqual(['openrouter:anthropic/claude-sonnet-4.5']);
+    expect(mk(true).sort()).toEqual(['openrouter-free:meta-llama/llama-3.3-70b-instruct:free', 'openrouter:anthropic/claude-sonnet-4.5']);
+  });
+
   it('rate-limits model calls per seat and symbol, and never overlaps them', async () => {
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));

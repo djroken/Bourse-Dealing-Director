@@ -13,7 +13,7 @@ const cat = (over: Record<string, unknown> = {}) => ({
 describe("model catalog from core", () => {
   it("keeps only free OpenRouter ids in the free list and well-formed Ollama ids", () => {
     expect(parseCatalog(cat())).toEqual({
-      openrouterKey: true, free: [{ id: "openrouter-free:deepseek/deepseek-chat:free", name: "DeepSeek V3 (free)" }], freeError: null,
+      openrouterKey: true, freeBudget: null, free: [{ id: "openrouter-free:deepseek/deepseek-chat:free", name: "DeepSeek V3 (free)" }], freeError: null,
       ollama: [{ id: "ollama:qwen2.5:0.5b", name: "qwen2.5:0.5b" }], ollamaUp: true,
     });
     expect(parseCatalog({})).toBeNull();
@@ -25,6 +25,12 @@ describe("model catalog from core", () => {
     expect(keyLine(parseCatalog(cat({ ollama: { reachable: false, models: [] } }))!, "ollama:llama3.2")!.ok).toBe(false);
     expect(keyLine(noKey, "gpt-5.1")).toBeNull();
     expect(keyLine(null, "ollama:x")).toBeNull();
+  });
+  it("free seats see the shared daily allowance, and when it's used up", () => {
+    const c = (used: number) => parseCatalog(cat({ openrouter: { keySet: true, free: [], budget: { used, cap: 45 } } }))!;
+    expect(keyLine(c(12), "openrouter-free:x/y:free")!.text).toContain("Free calls today: 12 of 45");
+    expect(keyLine(c(12), "openrouter:paid/model")!.text).toBe("OpenRouter key: found in core.");
+    expect(keyLine(c(45), "openrouter-free:x/y:free")).toMatchObject({ ok: false, text: expect.stringContaining("used up (45 of 45)") });
   });
   it("accepts custom ids only with a provider prefix", () => {
     expect(customModelOk("openrouter-free:google/gemma-3-27b-it:free")).toBe(true);

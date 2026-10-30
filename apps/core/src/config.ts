@@ -17,6 +17,10 @@ export interface CoreConfig {
   mcpToken?: string;
   /** Model calls per provider per UTC day (0 = unlimited). A runaway-loop guard; raise it if you want more. */
   modelDailyCap: { ollama: number; openrouter: number };
+  /** Calls a day to OpenRouter's free models across all seats (OPENROUTER_FREE_DAILY_CAP, default 45, 0 = no limit). */
+  freeDailyCap?: number;
+  /** Let free-model seats also make background market checks (BOURSE_FREE_BACKGROUND). Off: they think in floor rounds only. */
+  freeBackground?: boolean;
   /** Append every scored idea to <dataDir>/ideas.jsonl, a training/eval log that survives restarts. Default on. */
   ideaLog?: boolean;
   /** Minutes after an idea that its outcome is measured. Default 15. */
@@ -98,6 +102,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     mcpToken: pick(env, 'BOURSE_MCP_TOKEN'),
     ollamaHost: env.OLLAMA_HOST?.trim() || 'http://127.0.0.1:11434',
     modelDailyCap: { ollama: capOf(env.OLLAMA_DAILY_CAP, 0), openrouter: capOf(env.OPENROUTER_DAILY_CAP, 200) },
+    freeDailyCap: capOf(env.OPENROUTER_FREE_DAILY_CAP, 45),
+    freeBackground: /^(1|on|true|yes)$/i.test(pick(env, 'BOURSE_FREE_BACKGROUND') ?? ''),
     ideaLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_IDEA_LOG') ?? ''),
     scoreHorizonMin: horizonOf(pick(env, 'BOURSE_SCORE_HORIZON_MIN')),
     persist: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_PERSIST') ?? ''),

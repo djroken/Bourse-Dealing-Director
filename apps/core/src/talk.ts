@@ -1,6 +1,7 @@
 import type { Engine, FloorAgent, Logger } from './engine';
 import { momentumIntent } from './engine';
 import type { Headline } from './news';
+import { isFreeModelId } from './models';
 
 /**
  * The floor conversation. Every so often (and whenever the owner instructs the floor) the Dealing Director opens a
@@ -65,6 +66,8 @@ export interface TalkLine {
 /** Speaking order. The Director opens and closes; seats not on the floor are skipped. */
 const ORDER = ['Dealing Director', 'Quant / Signals', 'Sentiment Desk', 'Market Maker', 'Execution Trader', 'Research / News', 'On-chain Analyst', 'Risk Officer'];
 const OWNER = { id: 'OWNER', role: 'Owner', name: 'YOU' };
+/** Free-model calls a scheduled round leaves untouched, so the owner's own questions still get answers. */
+const FREE_RESERVE = 10;
 const norm = (r: string) => r.toUpperCase().replace(/\s+/g, ' ').trim();
 const first = (name: string) => name.split(' ')[0] ?? name;
 const pct = (v: number, dp = 2) => (v >= 0 ? '+' : '') + v.toFixed(dp) + '%';
@@ -298,6 +301,7 @@ export function createTalk(opts: TalkOptions) {
     rounds += 1;
     const lines: TalkLine[] = [];
     const leans: Array<{ who: string; symbol: string; side: 'BUY' | 'SELL' }> = [];
+    let reserveNoted = false;
     const say = (a: FloorAgent, text: string | null, model: string | null) => {
       if (!text) return;
       const said = engine.speak({ id: a.id, role: a.config.role, name: a.config.name }, text, { round: id, ...(model ? { model } : { stub: true }) });
@@ -309,6 +313,12 @@ export function createTalk(opts: TalkOptions) {
         const a = seat(role);
         if (!a || a.state !== 'running') continue;
         const phase = k === 0 ? 'open' : role === 'Risk Officer' ? 'risk' : 'desk';
+        if (isModel(a) && !owner && isFreeModelId(a.config.model) && (engine.advisor?.freeLeft?.() ?? Infinity) <= FREE_RESERVE) {
+          // A scheduled round leaves the last few free calls for when the owner asks something.
+          if (!reserveNoted) log.info(`floor talk: keeping the last ${FREE_RESERVE} free-model calls for owner instructions`);
+          reserveNoted = true;
+          continue;
+        }
         if (isModel(a)) {
           const task = phase === 'open'
             ? `Open the round: frame what matters in this market${owner ? ' and the owner\'s request' : ''}, and ask the desks for their read.`
@@ -333,7 +343,10 @@ export function createTalk(opts: TalkOptions) {
       }
       const director = seat('Dealing Director');
       if (director && director.state === 'running') {
-        if (isModel(director)) {
+        const saveFree = !owner && isFreeModelId(director.config.model) && (engine.advisor?.freeLeft?.() ?? Infinity) <= FREE_RESERVE;
+        if (isModel(director) && saveFree) {
+          /* keep the reserve: the Director closes silently */
+        } else if (isModel(director)) {
           const r = await modelLine(director, 'Close the round with the house view in one or two sentences: what the floor agrees on, what it does not, and what goes to the owner.', lines, owner, id);
           if (r) {
             say(director, r.say, director.config.model);
