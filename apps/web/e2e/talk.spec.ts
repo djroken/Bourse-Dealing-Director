@@ -16,6 +16,7 @@ test("the floor conversation: the owner's instruction goes to core, the agents' 
       const t = Date.now();
       const line = (agentId: string, role: string, name: string, text: string, extra: Record<string, unknown>) => send({ type: "chat", agentId, role, name, text, ts: t, round: "T1", ...extra });
       line("OWNER", "Owner", "YOU", m.text, {});
+      send({ type: "thinking", agentId: "TKT-003", role: "Market Maker", round: "T1", on: true, ts: t }); // still working on its line
       line("TKT-001", "Dealing Director", "Vega Ostrowski", "SOL is leading the tape. Pico, is it real?", { model: "ollama:llama3.2" });
       line("TKT-004", "Quant / Signals", "Pico Nandra", "Momentum is clean, Vega. I'd buy a small clip.", { model: "ollama:llama3.2" });
       line("TKT-007", "Risk Officer", "Bastion Cole", "No open risk on the floor. Every desk is inside its limits.", { stub: true });
@@ -37,7 +38,9 @@ test("the floor conversation: the owner's instruction goes to core, the agents' 
   await expect(log).toContainText("STUB RULE");
   await expect(log.getByRole("separator", { name: /FLOOR ROUND · \d\d:\d\d UTC · 3 speakers/ })).toHaveCount(1);
   await expect(log).toContainText("ollama:llama3.2");
-  await expect(log).not.toContainText("Acknowledged. Routing that"); // no scripted reply on a real floor
+  await expect(log).not.toContainText("Acknowledged. Routing that");
+  await expect(log.getByRole("status", { name: "Kite is thinking" })).toBeVisible();
+  await expect(page.locator(".hz-agent", { hasText: "Kite Alvarez" })).toContainText("THINKING"); // no scripted reply on a real floor
 
   await page.locator(".hz-tab", { hasText: "APPROVALS" }).click();
   await expect(page.locator(".hz-appr", { hasText: "SOL-PERP" })).toHaveCount(1);

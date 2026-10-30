@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { AgentChatMsgSchema, AgentIntentSchema, AgentUsageMsgSchema } from 'shared';
+import { AgentChatMsgSchema, AgentIntentSchema, AgentThinkingSchema, AgentUsageMsgSchema } from 'shared';
 import { loadConfig } from '../src/config';
 import { createEngine, type FloorSocket } from '../src/engine';
 import type { Advisor } from '../src/models';
@@ -129,6 +129,11 @@ describe('a round with model seats', () => {
     expect(String(intents[0]!.rationale)).toContain('ollama:quant in floor talk');
     expect(engine.scorecards().find((c) => c.role === 'Quant / Signals')!.ideas).toBeGreaterThan(0);
 
+    // While a model works on its line the Desk is told it's thinking; on and off, also when the call fails.
+    for (const m of ws.of('thinking')) expect(AgentThinkingSchema.safeParse(m).success).toBe(true);
+    expect(ws.of('thinking').filter((m) => m.role === 'Quant / Signals').map((m) => m.on)).toEqual([true, false]);
+    expect(ws.of('thinking').filter((m) => m.role === 'Market Maker').map((m) => m.on)).toEqual([true, false]);
+    expect(ws.of('thinking').some((m) => m.role === 'Execution Trader')).toBe(false); // stub seats don't think
     const usage = ws.of('usage');
     expect(usage.length).toBeGreaterThan(0);
     for (const u of usage) expect(AgentUsageMsgSchema.safeParse(u).success).toBe(true);
