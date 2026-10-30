@@ -21,7 +21,8 @@ export type CoreMsg =
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; venue?: BrokerId; ts: number }
   | ({ type: "scorecard"; ts: number } & Score)
-  | ({ type: "news"; ts: number } & CoreNews);
+  | ({ type: "news"; ts: number } & CoreNews)
+  | { type: "thinking"; agentId: string; role: string; on: boolean; ts: number };
 
 export const coreFloorUrl = (base: string = CORE_URL): string => base.replace(/^http/, "ws").replace(/\/$/, "") + "/agents";
 
@@ -66,6 +67,7 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
       ...(raw.stub === true ? { stub: true } : {}),
     };
   }
+  if (raw.type === "thinking") return typeof raw.on === "boolean" ? { type: "thinking", agentId, role, on: raw.on, ts } : null;
   if (raw.type === "usage") {
     const int = (v: unknown) => num(v) && v >= 0;
     if (!int(raw.callsToday) || !int(raw.tokensToday)) return null;
@@ -145,13 +147,14 @@ export function onCoreConnected(s: DeskState, now: number): Partial<DeskState> {
     scores: {},
     signals: {},
     news: [],
+    thinking: {},
     series: s.series.map(() => walk(26, 1, 0).map(() => 0)),
   };
 }
 
 export function onCoreLost(s: DeskState, now: number, was: CoreStatus): Partial<DeskState> {
-  if (was !== "live") return { core: "offline", scores: {}, signals: {}, news: [] };
-  return { core: "offline", scores: {}, signals: {}, news: [], seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
+  if (was !== "live") return { core: "offline", scores: {}, signals: {}, news: [], thinking: {} };
+  return { core: "offline", scores: {}, signals: {}, news: [], thinking: {}, seq: push(s.seq, { sysText: "Lost connection to Bourse Core. Back to the simulated floor.", t: now }) };
 }
 
 /** Guest agents (connected over MCP) have no seat on the Desk roster; their activity shows in the chat and blotter. */
@@ -195,7 +198,16 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
     if (m.agentId === "OWNER") return { seq: push(s.seq, { user: m.text, t: m.ts, ...(m.round ? { round: m.round } : {}) }) };
     const i = seatOf(s, m.role);
     if (i < 0) return null;
-    return { seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}) }) };
+    const stillThinking = { ...s.thinking };
+    delete stillThinking[i];
+    return { thinking: stillThinking, seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}) }) };
+  }
+  if (m.type === "thinking") {
+    const i = seatOf(s, m.role);
+    if (i < 0) return null;
+    const rest = { ...s.thinking };
+    delete rest[i];
+    return { thinking: m.on ? { ...rest, [i]: m.ts } : rest };
   }
   if (m.type === "usage") {
     const i = seatOf(s, m.role);

@@ -24,6 +24,15 @@ export function ChatLine({ r }: { r: ChatRow }) {
   if (r.kind === "sys") {
     return <div style={m(11, "0.08em", r.tint)}>{r.text}</div>;
   }
+  if (r.kind === "thinking") {
+    return (
+      <div className="hz-thinking" role="status" aria-label={r.text}>
+        <span style={m(10.5, "0.06em", r.tint, { fontWeight: 600 })}>{r.who}</span>
+        <span style={m(9, "0.1em", "var(--c4E5862)")}>{r.role}</span>
+        <span className="hz-dots" aria-hidden="true"><i /><i /><i /></span>
+      </div>
+    );
+  }
   if (r.kind === "round") {
     return <div className="hz-round" role="separator" aria-label={r.text}><span>{r.text}</span></div>;
   }

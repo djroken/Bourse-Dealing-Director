@@ -209,7 +209,9 @@ export function createTalk(opts: TalkOptions) {
       ...transcript.map((l) => `- ${l.who} (${l.role}): "${l.text.replace(/"/g, "'")}"`),
       `Your turn: ${task}`,
     ].filter(Boolean).join('\n');
+    engine.thinking(a, round, true);
     const res = await engine.advisor!.converse!(a.config.model, { system, user }, a.config.temperature, 240).catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed', usage: undefined }));
+    engine.thinking(a, round, false);
     engine.recordUsage(a, res.usage, res.ok ? undefined : res.reason);
     const rec: TalkCall = {
       round, at: now(), agentId: a.id, role: a.config.role, name: a.config.name, model: a.config.model, temperature: a.config.temperature,

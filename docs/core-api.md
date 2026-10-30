@@ -114,6 +114,12 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 ```
 
 ```jsonc
+{ "type": "thinking", "agentId": "TKT-004", "role": "Quant / Signals", "round": "T…", "on": true, "ts": 0 }
+```
+
+`thinking` says a model seat is working on its line in a round (`on: true`) and when it's done or gave up (`on: false`), so the Desk can show "Pico is thinking" instead of silence while a slow model answers. Stub seats never send it.
+
+```jsonc
 { "type": "news", "id": "afa7bd3dae4828b4", "source": "CoinDesk", "title": "…", "url": "https://…" , "publishedAt": 0, "tag": "MACRO|FLOW|VENUE|ON-CHAIN|MARKET", "symbols": ["SOL-USDT"], "ts": 0 }
 ```
 

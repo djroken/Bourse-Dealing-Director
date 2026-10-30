@@ -25,7 +25,7 @@ export interface AgentCard {
   spark: string; area: string; isAuto: boolean;
 }
 export interface ChatRow {
-  key: string; time: string; kind: "msg" | "trade" | "sys" | "round"; who: string; role: string; tint: string; text: string;
+  key: string; time: string; kind: "msg" | "trade" | "sys" | "round" | "thinking"; who: string; role: string; tint: string; text: string;
   side: Side | ""; sideBg: string; sideColor: string; ticket: string;
 }
 export interface FillRow {
@@ -171,6 +171,8 @@ export function buildView(s: DeskState): DeskView {
   }]);
 
   const onFloor = s.agents.map((a, i) => ({ a, i })).filter((x) => setup.agentsOn[x.i] !== false);
+  // A "thinking" that never got its end (a dropped message) stops showing after 90 s.
+  const thinkingNow = new Set(core ? Object.entries(s.thinking).filter(([, t]) => s.now - t < 90_000).map(([k]) => Number(k)) : []);
   const visible = onFloor.filter((x) => s.filter === "ALL" || x.a.grp === s.filter);
 
   const roster: AgentCard[] = visible.map(({ a, i }) => {
@@ -178,11 +180,12 @@ export function buildView(s: DeskState): DeskView {
     const raw = rawPnl(i, s.live, s.ref);
     const cb = core ? s.coreBook[i] : undefined;
     const net = cb ? cb.positions.reduce((x, q) => x + q.qty * s.live[q.k]!.px, 0) : 0;
-    const statusColor = a.paused ? "var(--cFFC078)" : a.grp === "risk" ? "var(--c9AA5B1)" : ACCENT;
+    const isThinking = core && thinkingNow.has(i);
+    const statusColor = a.paused ? "var(--cFFC078)" : isThinking ? "var(--c3ECF8E)" : a.grp === "risk" ? "var(--c9AA5B1)" : ACCENT;
     return {
       idx: i, name: a.name, role: a.role, model: a.model, autonomy: a.autonomy,
       initials: a.name.split(" ").map((w) => w[0]).join(""),
-      tint: TINTS[a.grp], status: a.paused ? "PAUSED" : a.status, statusColor,
+      tint: TINTS[a.grp], status: a.paused ? "PAUSED" : isThinking ? "THINKING" : a.status, statusColor,
       pnl: core ? (cb ? money(cb.pnl) : "—") : p ? money(raw * scale) : "—",
       pnlColor: core ? (cb ? (cb.pnl >= 0 ? UP : DOWN) : MUTED) : p ? (raw >= 0 ? UP : DOWN) : MUTED,
       exposure: core ? (cb && cb.exposure > 0 ? cm(cb.exposure) + (net < 0 ? " S" : " L") : "—") : p ? cm(p.q * s.live[p.k].px * scale) + (p.q < 0 ? " S" : " L") : "—",
@@ -244,6 +247,16 @@ export function buildView(s: DeskState): DeskView {
     if (e.round) lastRound = e.round;
     chat.push(rows[n]!);
   });
+
+  // Seats working on their line right now: a live "thinking…" row at the foot of the chat.
+  for (const i of thinkingNow) {
+    const a = s.agents[i];
+    if (!a) continue;
+    chat.push({
+      key: "think:" + i, time: "", kind: "thinking", who: a.name.split(" ")[0]!, role: a.role + " · " + a.model, tint: TINTS[a.grp as Grp],
+      text: a.name.split(" ")[0]! + " is thinking", side: "", sideBg: "", sideColor: "", ticket: "",
+    });
+  }
 
   const nAppr = s.approvals.length;
   const tabs = tabDefs.map(([id, label]) => ({

@@ -468,6 +468,11 @@ export function createEngine(opts: EngineOptions = {}) {
     return text;
   };
 
+  /** Tell the Desk a seat is working on its line (so a slow model shows as thinking, not as silence). */
+  const thinking = (a: FloorAgent, round: string, on: boolean): void => {
+    broadcast({ type: 'thinking', agentId: a.id, role: a.config.role, round: round.slice(0, 32), on, ts: now() });
+  };
+
   /**
    * An idea raised in conversation becomes an intent like any other: sized by core, counted on the scorecard, and
    * (for SUGGEST/APPROVE seats, and every model seat) waiting for a human. Refused for seats that don't trade.
@@ -548,6 +553,7 @@ export function createEngine(opts: EngineOptions = {}) {
   return {
     agents,
     postNews,
+    thinking,
 
     /** Called by the feed on every price tick. Only the symbol that moved is evaluated. */
     pushTick(symbol: string, tick: Tick): void {

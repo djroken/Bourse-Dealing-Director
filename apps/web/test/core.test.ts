@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, AgentScorecardSchema, NewsMsgSchema, defaultAgents } from "../../../packages/shared/src";
+import { AgentChatMsgSchema, AgentConfigMsgSchema, AgentDecisionSchema, AgentIntentSchema, AgentLifecycleSchema, AgentPnlSchema, AgentScorecardSchema, AgentThinkingSchema, NewsMsgSchema, defaultAgents } from "../../../packages/shared/src";
 import { SEED_AGENTS } from "../lib/desk/data";
 import { applyCoreMsg, coreFloorUrl, deskSym, onCoreConnected, onCoreLost, parseCoreMsg, seatOf } from "../lib/desk/core";
 import { createInitialState, tickState, type DeskState } from "../lib/desk/state";
@@ -171,7 +171,7 @@ describe("connection lifecycle", () => {
     const lost = onCoreLost(live, 9, "live");
     expect(lost.core).toBe("offline");
     expect(lost.seq!.at(-1)!.sysText).toMatch(/Lost connection/);
-    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {}, signals: {}, news: [] }); // never connected: say nothing
+    expect(onCoreLost(base(), 9, "connecting")).toEqual({ core: "offline", scores: {}, signals: {}, news: [], thinking: {} }); // never connected: say nothing
   });
 });
 
@@ -288,6 +288,23 @@ describe("floor conversation", () => {
     expect(rows.map((r) => r.kind)).toEqual(["round", "msg", "msg", "msg", "round", "msg"]);
     expect(rows[0]!.text).toBe("FLOOR ROUND · 15:30 UTC · 2 speakers");
     expect(rows[4]!.text).toBe("FLOOR ROUND · 15:45 UTC · 1 speaker");
+  });
+  it("a seat working on its line shows THINKING on its card and a live row in the chat, until its line arrives", () => {
+    let s: DeskState = { ...base(), core: "live", now: 1_000 };
+    const think = (on: boolean, ts = 1_000) => (s = { ...s, ...applyCoreMsg(s, parseCoreMsg({ type: "thinking", agentId: "TKT-004", role: roleOf("Pico"), round: "R1", on, ts })!)! });
+    expect(AgentThinkingSchema.safeParse({ type: "thinking", agentId: "TKT-004", role: "Quant / Signals", round: "R1", on: true, ts: 1 }).success).toBe(true);
+    think(true);
+    let v = buildView(s);
+    expect(v.roster.find((r) => r.name.startsWith("Pico"))!.status).toBe("THINKING");
+    expect(v.chat.at(-1)).toMatchObject({ kind: "thinking", who: "Pico", text: "Pico is thinking" });
+    s = { ...s, ...applyCoreMsg(s, parseCoreMsg(chat({ round: "R1" }))!)! }; // its line ends the thinking
+    v = buildView(s);
+    expect(v.chat.some((r) => r.kind === "thinking")).toBe(false);
+    think(true);
+    think(false);
+    expect(buildView(s).chat.some((r) => r.kind === "thinking")).toBe(false);
+    think(true, 1_000);
+    expect(buildView({ ...s, now: 100_000 }).chat.some((r) => r.kind === "thinking")).toBe(false); // a lost "off" expires
   });
   it("the owner's echoed words show as YOU; unknown seats are ignored", () => {
     const s = base();

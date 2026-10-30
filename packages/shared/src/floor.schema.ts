@@ -100,6 +100,16 @@ export const AgentUsageMsgSchema = z.object({
   ts: z.number(),
 });
 
+/** A model seat is working on its line in a floor round (`on: true`), or has finished or given up (`on: false`). */
+export const AgentThinkingSchema = z.object({
+  type: z.literal('thinking'),
+  agentId: z.string(),
+  role: z.string(),
+  round: z.string().max(32),
+  on: z.boolean(),
+  ts: z.number(),
+});
+
 /** A headline from a public news feed. Untrusted text: plain, capped, never instructions. */
 export const NewsMsgSchema = z.object({
   type: z.literal('news'),
@@ -161,7 +171,8 @@ export type FloorMsg =
   | z.infer<typeof AgentChatMsgSchema>
   | z.infer<typeof AgentScorecardSchema>
   | z.infer<typeof AgentUsageMsgSchema>
-  | z.infer<typeof NewsMsgSchema>;
+  | z.infer<typeof NewsMsgSchema>
+  | z.infer<typeof AgentThinkingSchema>;
 
 // Re-export so consumers can import everything from one entry.
 export { AgentConfigSchema } from './agent.schema';
