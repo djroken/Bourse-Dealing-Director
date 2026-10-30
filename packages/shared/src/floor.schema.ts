@@ -36,6 +36,9 @@ export const AgentDecisionSchema = z.object({
   price: z.number().positive(),
   rationale: z.string(),
   riskChecked: z.boolean(),
+  /** Set when the order went to a broker paper account (Alpaca paper, Binance testnet) instead of core's paper venue. */
+  venue: z.enum(['alpaca-paper', 'binance-testnet']).optional(),
+  venueOrderId: z.string().max(64).optional(),
   ts: z.number(),
 });
 

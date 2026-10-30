@@ -18,6 +18,7 @@ import { buildInstruments } from './instruments';
 import { fetchClock, fetchStockBars, fetchStockQuotes, type AlpacaKeys, type MarketClock } from './alpaca';
 import { fetchHistory } from './replay';
 import { createTalk } from './talk';
+import { VENUE_LABEL, alpacaPaper, binanceTestnet, httpFetch, type HttpFetch, type Venue, type VenueId } from './venues';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
 
 export interface ServerDeps {
@@ -26,6 +27,8 @@ export interface ServerDeps {
   engine?: Engine;
   /** Overrides the store built from config (tests). */
   secrets?: SecretStore;
+  /** HTTP for the broker paper accounts (tests). */
+  http?: HttpFetch;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -68,7 +71,22 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   };
   const built = buildInstruments({ extraCrypto: config.extraCrypto, stocks: config.stocks, stocksEnabled: !!alpacaKeys() });
   for (const w of built.warnings) server.log.warn(w);
-  const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments });
+  // ---- broker paper accounts: owner-approved orders can go to Alpaca paper (stocks) or the Binance testnet (crypto) -----
+  const binanceKeys = () => {
+    const key = secrets?.get('venue.binance-testnet.key') ?? (process.env.BINANCE_TESTNET_API_KEY?.trim() || undefined);
+    const secret = secrets?.get('venue.binance-testnet.secret') ?? (process.env.BINANCE_TESTNET_API_SECRET?.trim() || undefined);
+    return key && secret ? { key, secret } : undefined;
+  };
+  const http = deps.http ?? httpFetch;
+  const venues: Record<VenueId, Venue> = { 'alpaca-paper': alpacaPaper({ keys: alpacaKeys, http }), 'binance-testnet': binanceTestnet({ keys: binanceKeys, http }) };
+  const venueOn: Record<VenueId, boolean> = { 'alpaca-paper': !!config.venues?.stocks, 'binance-testnet': !!config.venues?.crypto };
+  const venueFor = (kind: 'stock' | 'crypto'): VenueId => (kind === 'stock' ? 'alpaca-paper' : 'binance-testnet');
+  const route = (symbol: string): Venue | undefined => {
+    const inst = built.instruments.find((i) => i.symbol === symbol);
+    const id = inst ? venueFor(inst.kind) : undefined;
+    return id && venueOn[id] ? venues[id] : undefined;
+  };
+  const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments, route });
   const instruments = engine.instruments();
   const stockSymbols = instruments.filter((i) => i.kind === 'stock').map((i) => i.symbol);
   const crypto = cryptoFeeds(instruments);
@@ -220,6 +238,31 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     if (talk.status().running) return reply.code(409).send({ error: 'a round is already running' });
     void talk.runRound();
     return reply.code(202).send({ ok: true });
+  });
+
+  // ---- broker paper accounts ------------------------------------------------------------------------------------------
+  const venueView = () =>
+    (Object.keys(venues) as VenueId[]).map((id) => ({
+      id, label: VENUE_LABEL[id], markets: id === 'alpaca-paper' ? 'stocks' : 'crypto', enabled: venueOn[id], keySet: venues[id].ready(),
+      // Routing needs both: the switch on and keys saved. Otherwise approved orders fill on core's paper venue.
+      routing: venueOn[id] && venues[id].ready(),
+      sandbox: true,
+    }));
+  const isVenue = (id: string): id is VenueId => id in venues;
+  server.get('/venues', async () => ({ venues: venueView(), live: false }));
+  server.put<{ Params: { id: string } }>('/venues/:id', async (req, reply) => {
+    if (!isVenue(req.params.id)) return reply.code(404).send({ error: 'not found' });
+    const body = z.object({ enabled: z.boolean() }).strict().safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'body must be { "enabled": true|false }' });
+    venueOn[req.params.id] = body.data.enabled;
+    server.log.info(`${VENUE_LABEL[req.params.id]} routing ${body.data.enabled ? 'on' : 'off'}`);
+    return { venues: venueView(), live: false };
+  });
+  /** One authenticated call to the broker's sandbox, so the owner can see a saved key works before routing to it. */
+  server.post<{ Params: { id: string } }>('/venues/:id/check', async (req, reply) => {
+    if (!isVenue(req.params.id)) return reply.code(404).send({ error: 'not found' });
+    const r = await venues[req.params.id].check().catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message.slice(0, 160) : 'failed' }));
+    return r;
   });
 
   // ---- replay: run seats over past candles ---------------------------------------------------------------------------

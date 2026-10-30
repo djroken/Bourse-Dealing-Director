@@ -2,7 +2,7 @@
 
 `apps/core` is a small Fastify + WebSocket service. It polls public market data, runs the **simulated** agent floor, and streams what happens. This page documents what exists in the code today.
 
-> **Status: prototype.** Core has **no user accounts** (only `/mcp` needs a token) and **cannot place real orders**. Seats run a momentum rule by default; a seat can instead be pointed at a model (see Real models), and outside agents can join over MCP. See the [README](../README.md) for the roadmap.
+> **Status: prototype.** Core has **no user accounts** (only `/mcp` needs a token) and **cannot place real-money orders**: approved orders can go to a broker's paper account (play money), never a live one. Seats run a momentum rule by default; a seat can instead be pointed at a model (see Real models), and outside agents can join over MCP. See the [README](../README.md) for the roadmap.
 
 Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by environment variable, see [`.env.example`](../.env.example):
 
@@ -15,7 +15,11 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | `BOURSE_DATA_DIR` | `.bourse` | Directory for the encrypted `secrets.json` (created with 0600 permissions). |
 | `BOURSE_CRYPTO` | unset | Extra coins with a Binance USDT market, comma-separated (e.g. `DOGE,ADA`), on top of BTC, ETH, SOL, BNB, XRP. Up to 12. |
 | `BOURSE_STOCKS` | `SPY,AAPL,NVDA,TSLA` | US tickers to trade, when an Alpaca key is set. Up to 12. |
-| `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY` | unset | Alpaca market-data key (free paper account). Or save them in Setup as `data.alpaca.key` / `data.alpaca.secret`. Read-only use: core never places an Alpaca order. |
+| `ALPACA_API_KEY_ID`, `ALPACA_API_SECRET_KEY` | unset | Alpaca paper-account key: market data, and Alpaca paper trading if you switch it on. Or save them in Setup as `data.alpaca.key` / `data.alpaca.secret`. |
+| `BOURSE_VENUE_STOCKS` | `sim` | `alpaca-paper` sends US stock orders you approve to your Alpaca paper account. See [Broker paper accounts](#broker-paper-accounts). |
+| `BOURSE_VENUE_CRYPTO` | `sim` | `binance-testnet` sends crypto orders you approve to the Binance spot testnet. |
+| `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_API_SECRET` | unset | Binance spot testnet key (testnet.binance.vision). Or save them in Setup as `venue.binance-testnet.key` / `.secret`. |
+| `BOURSE_TALK_MIN` | `15` | Minutes between [floor conversation](#floor-conversation) rounds. `0` = only when you instruct the floor. |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
 
 ## HTTP
@@ -41,6 +45,9 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/candles?symbol=AAPL&tf=5m` | Up to 120 candles for a **stock** (`tf` 1m, 5m, 15m, 1h, 4h, 1d), for the Desk's chart. Crypto candles come from the exchanges directly |
 | GET | `/floor/talk` | `{ enabled, intervalMs, running, lastRoundAt, rounds }`: the floor conversation (see [Floor conversation](#floor-conversation)) |
 | POST | `/floor/round` | Start a round now. `202 { "ok": true }`, or `409` if one is already running |
+| GET | `/venues` | `{ venues: [{ id, label, markets, enabled, keySet, routing, sandbox }], live: false }`: the broker paper accounts (see [Broker paper accounts](#broker-paper-accounts)) |
+| PUT | `/venues/:id` | Body `{ "enabled": true\|false }`: route approved orders to that sandbox, or back to core's paper venue. Until restart |
+| POST | `/venues/:id/check` | One authenticated read of the sandbox account: `{ ok: true, detail }` or `{ ok: false, reason }` |
 | GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
 | PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
 | DELETE | `/secrets/:id` | Removes it, `404` if absent |
@@ -162,6 +169,23 @@ The floor talks. A **round** is one pass round the desk, in this order: Dealing 
 - **Ideas become intents that need approval.** Only trading seats may attach an idea. Core checks the symbol, sizes it with the seat's risk limits, scores it like any other idea, and emits an `intent` with `needsApproval: true`, even for a seat on AUTO. The owner approves it on the Desk (`place_order`) and the risk gate still applies.
 - **The owner's instruction** opens the next round and is quoted to every speaker. One instruction every 10 seconds; one more is queued while a round is running.
 - **Cost.** Each model seat makes one call per round (up to 240 output tokens), on top of its normal decisions, and counts toward the provider's daily cap. On Ollama and free OpenRouter models that is free; on paid `openrouter:` models a round costs real money, so raise `BOURSE_TALK_MIN` or set it to `0`.
+
+## Broker paper accounts
+
+By default an order you approve fills on core's paper venue at core's last price. Switch on a broker's paper account and it goes to the broker instead, so your agents' trades meet a real order-handling system (lot sizes, minimums, balances, rejections) with play money:
+
+| id | Markets | Account | Keys |
+|---|---|---|---|
+| `binance-testnet` | Crypto (USDT pairs) | [Binance spot testnet](https://testnet.binance.vision), free, log in with GitHub | `venue.binance-testnet.key` / `.secret`, or `BINANCE_TESTNET_API_KEY` / `_SECRET` |
+| `alpaca-paper` | US stocks | Your Alpaca paper account, free | The Alpaca key used for market data |
+
+Switch one on in Setup (step 04, ROUTE APPROVED ORDERS HERE), with `PUT /venues/:id`, or at start-up with `BOURSE_VENUE_CRYPTO=binance-testnet` / `BOURSE_VENUE_STOCKS=alpaca-paper`. CHECK KEY makes one read-only call to the account.
+
+- **Sandboxes only.** The broker URLs (`testnet.binance.vision`, `paper-api.alpaca.markets`) are constants in [`venues.ts`](../apps/core/src/venues.ts), not settings, and a test fails if any other host appears there. Nothing here can reach a live account. `live` is always `false`.
+- **Same gate first.** The order passes every check of a paper order (halt, clip, loss stop, market hours) before it is sent. A refused order never reaches the broker.
+- **Core books the broker's fill**: its quantity and average price, rounded to the venue's lot size (always down). The `decision` carries `venue` and `venueOrderId`. A refusal comes back as a `decision` with `riskChecked: false` and the broker's reason, and books nothing. A fill for more than was asked, or with no price, is not booked. If the fill is 1% or more from core's price the rationale says so.
+- **What goes there.** Only orders you approve. AUTO stub seats and MCP guests keep filling on core's paper venue, so a busy floor can't flood a testnet account.
+- **Known gaps.** Binance's testnet is spot only: a sell needs testnet coins, so shorts are refused. Testnet prices can drift from the real market. An Alpaca order that hasn't filled in 10 seconds is cancelled and only what filled is booked. Core's paper book and the broker account are separate ledgers and can drift; the broker's own page is the truth for the broker side.
 
 ## Origin policy
 

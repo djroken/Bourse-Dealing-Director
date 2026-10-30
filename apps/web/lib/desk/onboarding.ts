@@ -19,6 +19,8 @@ export interface OnbItem {
   locked?: boolean;
   /** Placeholder for an integration that doesn't exist yet: shown, but can't be selected and takes no input. */
   soon?: boolean;
+  /** A broker paper account in core (play money): the card shows core's routing switch and a key check. */
+  broker?: "alpaca-paper" | "binance-testnet";
 }
 export interface OnbStep {
   id: "runtime" | "model" | "data" | "venue";
@@ -78,18 +80,20 @@ export const STEPS: OnbStep[] = [
       { id: "defillama", name: "DefiLlama", tag: "FREE · NO KEY", desc: "TVL, yields, stablecoin supply and DEX volume for the DeFi seats.", fields: [] },
       { id: "frankfurter", name: "Frankfurter FX", tag: "FREE · NO KEY", desc: "ECB reference FX rates, published daily.", fields: [] },
       { id: "coingecko", name: "CoinGecko", tag: "FREE TIER", desc: "Prices and market caps for long-tail tokens. Demo key optional.", fields: [F("key", "DEMO KEY (OPTIONAL)", "CG-…", "password")] },
-      { id: "alpaca", name: "Alpaca market data", tag: "FREE KEY · STOCKS", desc: "US stock quotes and bars (IEX feed) from a free Alpaca paper account. Adds SPY, AAPL, NVDA and TSLA to the floor; restart core after saving. Market data only: Bourse never places an Alpaca order.", fields: [F("key", "API KEY ID", "PK…", "password"), F("secret", "API SECRET KEY", "••••••••", "password")] },
+      { id: "alpaca", name: "Alpaca market data", tag: "FREE KEY · STOCKS", desc: "US stock quotes and bars (IEX feed) from a free Alpaca paper account. Adds SPY, AAPL, NVDA and TSLA to the floor; restart core after saving. Bourse only places orders on this paper account if you switch on Alpaca paper trading in step 04.", fields: [F("key", "API KEY ID", "PK…", "password"), F("secret", "API SECRET KEY", "••••••••", "password")] },
       { id: "finnhub", name: "Finnhub", tag: "FREE KEY", desc: "US equities, company news and the earnings calendar.", fields: KEY("Finnhub token") },
       { id: "twelvedata", name: "Twelve Data", tag: "FREE KEY", desc: "Equities, FX, ETFs and indices across global exchanges.", fields: KEY("Twelve Data key") },
       { id: "tradingview", name: "TradingView", tag: "CHARTS + ALERTS", desc: "TradingView charts on the desk. Point TradingView alerts at the webhook below to send signals to the floor.", fields: [F("hook", "ALERT WEBHOOK URL", "", "text", { v: "https://<your-bourse-host>/hooks/tradingview", ro: true }), F("pass", "ALERT PASSPHRASE", "Set a shared secret", "password")] },
     ],
   },
   {
-    id: "venue", num: "04", label: "Venues & wallets", sub: "Live: coming soon",
+    id: "venue", num: "04", label: "Venues & wallets", sub: "Broker paper · Live: coming soon",
     title: "Venues and wallets",
-    desc: "Live trading isn't built yet, so the venues below are placeholders for the integrations on the roadmap. Bourse only paper trades: nothing you do here can place a real order, and there is no field to enter exchange keys.",
+    desc: "Orders you approve fill on core's paper venue, or on a broker's paper account if you switch one on: real exchange order handling with play money. Live trading isn't built yet, so the live venues below are placeholders. Nothing here can place a real-money order.",
     items: [
       { id: "paper", name: "Paper venue", tag: "DEFAULT", desc: "Simulated fills at the live mid. Always on in Demo.", fields: [], locked: true },
+      { id: "binance-testnet", name: "Binance spot testnet", tag: "FREE · PLAY MONEY", broker: "binance-testnet", desc: "Crypto orders you approve go to the Binance spot testnet and book its fill. Make a key at testnet.binance.vision (sign in with GitHub). Spot only: a sell needs testnet coins to sell, and testnet prices can drift from the real market.", fields: [F("key", "TESTNET API KEY", "Testnet key", "password"), F("secret", "TESTNET SECRET KEY", "••••••••", "password")] },
+      { id: "alpaca-paper", name: "Alpaca paper trading", tag: "FREE · PLAY MONEY", broker: "alpaca-paper", desc: "US stock orders you approve go to your Alpaca paper account and book Alpaca's fill. Uses the Alpaca key from Market data (step 03); a paper key can't trade real money.", fields: [] },
       { id: "binance", name: "Binance", tag: "API KEY", desc: "Spot and USDⓈ-M perpetuals.", fields: KEYSEC(), soon: true },
       { id: "bybit", name: "Bybit", tag: "API KEY", desc: "Spot, perps and options on the unified account.", fields: KEYSEC(), soon: true },
       { id: "hyperliquid", name: "Hyperliquid", tag: "API WALLET", desc: "On-chain perps. Use an API wallet so the main key never leaves your device.", fields: [F("addr", "ACCOUNT ADDRESS", "0x…"), F("key", "API WALLET KEY", "Trade-only agent key", "password")] , soon: true },

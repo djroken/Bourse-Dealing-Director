@@ -20,11 +20,15 @@ describe("live trading is not available", () => {
     expect(venuesReady(hostile)).toEqual([]);
   });
 
-  it("every non-paper venue in onboarding is a placeholder", () => {
+  it("every venue in onboarding is paper, a broker sandbox with play money, or a placeholder", () => {
     const venues = STEPS.find((s) => s.id === "venue")!;
     for (const it of venues.items) {
       if (it.id === "paper") expect(it.locked).toBe(true);
-      else expect(it.soon, it.name).toBe(true);
+      else if (it.broker) {
+        expect(["alpaca-paper", "binance-testnet"]).toContain(it.broker);
+        expect(it.id, it.name).toBe(it.broker);
+        expect(it.tag).toContain("PLAY MONEY");
+      } else expect(it.soon, it.name).toBe(true);
     }
   });
 });

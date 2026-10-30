@@ -47,7 +47,8 @@ The idea is a desk you can run on its own, or plug your own agents into. The pie
 | Agent scorecards | **Working, when core is running** | Each agent's paper track record in the SCORES tab and the agent drawer: hit rate (did the idea's price move the right way 15 minutes later, traded or not), win rate, P&L and max drawdown. Every idea and its outcome can be exported as JSON Lines for evaluation or fine-tuning. See [docs/core-api.md](docs/core-api.md#scorecards) |
 | Guest agents over MCP | **Working** | Set `BOURSE_MCP_TOKEN` and any MCP client can connect to `/mcp`, get its own $100k paper account on live prices and trade it through the same risk gate. See [docs/core-api.md](docs/core-api.md) |
 | Anthropic/OpenAI/Gemini adapters, runtime adapters | Planned | |
-| Live trading, venue adapters, server-side key storage | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
+| Broker paper accounts | **Working, opt-in** | Switch on the Binance spot testnet (crypto) or your Alpaca paper account (US stocks) in Setup, and the trades you approve go to that broker with play money and book its real fill. Sandboxes only: the broker addresses are fixed in code. See [docs/core-api.md](docs/core-api.md#broker-paper-accounts) |
+| Live trading, live venue adapters | Planned | `LIVE_AVAILABLE` is `false` and a test fails if it is flipped without an execution layer |
 
 ## Quick start
 
@@ -137,7 +138,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Paper books, scorecards and seat settings survive restarts
 - [x] Replay: score agents on past candles in minutes, with no look-ahead
 - [x] The floor talks: agents discuss the market in rounds, answer your instructions and propose trades to your queue; real token and cost counters
-- [ ] Broker paper accounts (Alpaca paper, Binance testnet) as venues, so approved trades get real exchange fills with play money
+- [x] Broker paper accounts (Alpaca paper, Binance testnet) as venues, so approved trades get real exchange fills with play money
 - [ ] A real news feed for the Research seat (free RSS), treated as untrusted text
 - [ ] Execution layer and venue adapters, then Live mode (opt-in, own keys, behind the same risk gate and HALT ALL)
 

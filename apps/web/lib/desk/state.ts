@@ -37,6 +37,8 @@ export interface Fill {
   status: "FILLED" | "SETTLED";
   /** Quantity is in real asset units (from core), not the prototype's reference book, so it isn't scaled to paper capital. */
   raw?: boolean;
+  /** Filled on a broker paper account instead of core's paper venue. */
+  venue?: "alpaca-paper" | "binance-testnet";
 }
 export interface Approval {
   id: string;

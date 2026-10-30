@@ -1,3 +1,4 @@
+import { BROKER_IDS, BROKER_LABEL, type BrokerId } from "./venues";
 import { CORE_URL } from "./secrets";
 import { LBL, PERP, type Autonomy, type Side } from "./data";
 import { cm, fmt, fmtQty } from "./format";
@@ -18,7 +19,7 @@ export type CoreMsg =
   | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean }
   | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
-  | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; ts: number }
+  | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; venue?: BrokerId; ts: number }
   | ({ type: "scorecard"; ts: number } & Score);
 
 export const coreFloorUrl = (base: string = CORE_URL): string => base.replace(/^http/, "ws").replace(/\/$/, "") + "/agents";
@@ -94,7 +95,8 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
   }
   if (raw.type === "decision") {
     if (!sideOf(raw.action) || !num(raw.size) || raw.size < 0 || !num(raw.price) || raw.price <= 0 || typeof raw.riskChecked !== "boolean") return null;
-    return { type: "decision", agentId, role, symbol: raw.symbol, action: raw.action, size: raw.size, price: raw.price, rationale: raw.rationale, riskChecked: raw.riskChecked, ts };
+    const venue = BROKER_IDS.find((b) => b === raw.venue);
+    return { type: "decision", agentId, role, symbol: raw.symbol, action: raw.action, size: raw.size, price: raw.price, rationale: raw.rationale, riskChecked: raw.riskChecked, ...(venue ? { venue } : {}), ts };
   }
   return null;
 }
@@ -232,11 +234,13 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
 
   // decision
   if (m.action === "HOLD" || m.size === 0) {
-    return m.riskChecked ? null : { seq: push(s.seq, { sysText: `${first} · ${PERP(k)} vetoed by the risk gate: ${m.rationale}`, t }) };
+    if (m.riskChecked) return null;
+    return { seq: push(s.seq, { sysText: m.venue ? `${first} · ${PERP(k)} not filled: ${m.rationale}` : `${first} · ${PERP(k)} vetoed by the risk gate: ${m.rationale}`, t }) };
   }
-  const fill: Fill = { side: m.action, k, q: m.size, agent: ag.name, t, px: m.price, status: "FILLED", raw: true };
+  const fill: Fill = { side: m.action, k, q: m.size, agent: ag.name, t, px: m.price, status: "FILLED", raw: true, ...(m.venue ? { venue: m.venue } : {}) };
+  const where = m.venue ? `${BROKER_LABEL[m.venue]} (play money)` : "paper";
   return {
     fills: [fill].concat(s.fills).slice(0, 40),
-    seq: push(s.seq, { sysText: `${first} · ${m.action} ${PERP(k)} ${fmtQty(m.size)} @ ${fmt(m.price, LBL[k]!.dp)} · paper · risk checked`, t }),
+    seq: push(s.seq, { sysText: `${first} · ${m.action} ${PERP(k)} ${fmtQty(m.size)} @ ${fmt(m.price, LBL[k]!.dp)} · ${where} · risk checked`, t }),
   };
 }
