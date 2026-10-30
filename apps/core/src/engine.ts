@@ -4,6 +4,7 @@ import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
 import type { Advisor, ModelUsage } from './models';
 import { DEFAULT_CRYPTO, type Instrument } from './instruments';
+import type { Venue, VenueResult } from './venues';
 import { createScorebook, type IdeaRecord, type ScoreDump, type Scorecard } from './scorecard';
 
 /** What survives a restart: seat settings, every paper book (guests included) and the scorebook. Keyed by role. */
@@ -108,6 +109,8 @@ export interface EngineOptions {
   onIdeaResolved?: (rec: IdeaRecord) => void;
   /** What the floor trades. Defaults to the built-in crypto list. */
   instruments?: Instrument[];
+  /** The broker paper account for a symbol, if one is set up. Only orders the owner approves go there; everything else stays on core's paper venue. */
+  route?: (symbol: string) => Venue | undefined;
 }
 
 /** Scorecards go out at most this often per seat, so a busy tick doesn't flood clients. */
@@ -305,12 +308,13 @@ export function createEngine(opts: EngineOptions = {}) {
    * The one way an order reaches a paper book from outside the stub/model rules: an operator's approval or a guest agent's
    * place_order. Rejected (never clamped) if it breaks a limit, so the caller sees exactly what happened.
    */
-  const submitOrder = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number, note: string): OrderResult => {
+  /** Every limit check an order passes before it is booked or sent to a broker. Returns the veto, or the price to book at. */
+  const checkOrder = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number): { ok: false; result: OrderResult } | { ok: true; price: number } => {
     const price = lastPx.get(symbol);
-    const veto = (why: string): OrderResult => {
+    const veto = (why: string): { ok: false; result: OrderResult } => {
       scores.veto(ident(agent));
       broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: 'HOLD', size: 0, price: price ?? 1, rationale: why, riskChecked: false, ts: now() });
-      return { ok: false, reason: why };
+      return { ok: false, result: { ok: false, reason: why } };
     };
     if (agent.state !== 'running') return veto('Floor is halted: order not placed');
     if (!bySymbol.has(symbol)) return veto(`${symbol} is not traded on this floor: order not placed`);
@@ -328,17 +332,55 @@ export function createEngine(opts: EngineOptions = {}) {
       const post = cur - Math.abs(oldQty) * price + Math.abs(oldQty + (side === 'BUY' ? size : -size)) * price;
       if (post > cur && post > cap) return veto(`Would take exposure over $${cap} (${maxLeverage}x the $${PAPER_CAPITAL} paper book): not placed`);
     }
+    return { ok: true, price };
+  };
+
+  const bookOrder = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number, price: number, rationale: string, venue?: { id: Venue['id']; orderId: string }): OrderResult => {
     fillBook(agent, symbol, side, size, price);
-    broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: side, size, price, rationale: `${note} · within risk limits`, riskChecked: true, ts: now() });
+    broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: side, size, price, rationale, riskChecked: true, ...(venue ? { venue: venue.id, venueOrderId: venue.orderId } : {}), ts: now() });
     const p = pnlMsg(agent);
     broadcast(p);
     return { ok: true, symbol, side, size, price, pnl: p.type === 'pnl' ? p.pnl : 0, exposure: p.type === 'pnl' ? p.exposure : 0 };
   };
 
+  /** The paper venue: fill at core's last price. */
+  const submitOrder = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', size: number, note: string): OrderResult => {
+    const c = checkOrder(agent, symbol, side, size);
+    return c.ok ? bookOrder(agent, symbol, side, size, c.price, `${note} · within risk limits`) : c.result;
+  };
+
+  /**
+   * A broker paper account (Alpaca paper, Binance testnet): the same checks, then the order goes to the broker and the
+   * paper book takes the broker's fill (its quantity and price), whatever happens on the floor meanwhile: the order is out.
+   */
+  const routeOrder = async (agent: FloorAgent, venue: Venue, symbol: string, side: 'BUY' | 'SELL', size: number, note: string): Promise<OrderResult> => {
+    const c = checkOrder(agent, symbol, side, size);
+    if (!c.ok) return c.result;
+    const reject = (why: string): OrderResult => {
+      broadcast({ type: 'decision', agentId: agent.id, role: agent.config.role, symbol, action: 'HOLD', size: 0, price: lastPx.get(symbol) ?? c.price, rationale: why, riskChecked: false, venue: venue.id, ts: now() });
+      return { ok: false, reason: why };
+    };
+    const res = await venue.submit({ symbol, side, qty: size }).catch((e: unknown): VenueResult => ({ ok: false, reason: e instanceof Error ? e.message.slice(0, 160) : 'failed' }));
+    if (!res.ok) {
+      log.warn(`${venue.label} refused ${side} ${size} ${symbol}: ${res.reason}`);
+      return reject(`${venue.label} refused the order: ${res.reason}`);
+    }
+    const { qty, price, orderId } = res.fill;
+    // The broker's numbers are untrusted: never book more than was asked for, or a price that isn't a price.
+    if (!(qty > 0) || qty > size * 1.0001 || !(price > 0) || !Number.isFinite(price)) return reject(`${venue.label} sent a fill core can't book (order ${orderId}); check the broker account`);
+    const mkt = lastPx.get(symbol) ?? c.price;
+    const gap = Math.abs(price / mkt - 1) * 100;
+    const extra = [res.note, gap >= 1 ? `fill ${gap.toFixed(1)}% from the market price` : ''].filter(Boolean).join(', ');
+    return bookOrder(agent, symbol, side, qty, price, `${note} · filled on ${venue.label}, order ${orderId}${extra ? ` (${extra})` : ''} · within risk limits`, { id: venue.id, orderId });
+  };
+
   const placeOrder = (role: string, symbol: string, side: 'BUY' | 'SELL', size: number): void => {
     if (!bySymbol.has(symbol)) return; // like a malformed message: not something this floor trades
     const agent = agents.find((a) => norm(a.config.role) === norm(role) && a.config.trades && !a.external);
-    if (agent) submitOrder(agent, symbol, side, size, 'Approved by operator');
+    if (!agent) return;
+    const venue = opts.route?.(symbol);
+    if (venue?.ready()) void routeOrder(agent, venue, symbol, side, size, 'Approved by operator');
+    else submitOrder(agent, symbol, side, size, 'Approved by operator');
   };
 
   const cleanName = (n: string): string => n.replace(/[^\w .\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 24);
@@ -597,6 +639,7 @@ export function createEngine(opts: EngineOptions = {}) {
     // ---- for guest agents (MCP) ----
     registerGuest,
     submitOrder,
+    routeOrder,
     post,
     quotes: () =>
       [...lastTick.entries()].map(([symbol, t]) => ({

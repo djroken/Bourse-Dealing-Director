@@ -28,6 +28,8 @@ export interface CoreConfig {
   stocks?: string;
   /** Minutes between floor conversation rounds (BOURSE_TALK_MIN). 0 = only when the owner asks. Default 15. */
   talkMin?: number;
+  /** Route owner-approved orders to a broker paper account instead of core's paper venue. Default: core's paper venue. */
+  venues?: { stocks: boolean; crypto: boolean };
 }
 
 const DEFAULT_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
@@ -56,6 +58,12 @@ function horizonOf(v: string | undefined): number {
   const n = Number(v);
   if (!Number.isFinite(n) || n < 1 || n > 1440) throw new Error(`BOURSE_SCORE_HORIZON_MIN must be between 1 and 1440 minutes, got "${v}"`);
   return n;
+}
+
+function venueOf(v: string | undefined, name: string, id: string): boolean {
+  if (v === undefined || /^(sim|paper|off|0|false|no)$/i.test(v)) return false;
+  if (v.toLowerCase() === id) return true;
+  throw new Error(`${name} must be "sim" or "${id}", got "${v}"`);
 }
 
 function talkOf(v: string | undefined): number {
@@ -91,6 +99,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     extraCrypto: pick(env, 'BOURSE_CRYPTO'),
     stocks: pick(env, 'BOURSE_STOCKS'),
     talkMin: talkOf(pick(env, 'BOURSE_TALK_MIN')),
+    venues: {
+      stocks: venueOf(pick(env, 'BOURSE_VENUE_STOCKS'), 'BOURSE_VENUE_STOCKS', 'alpaca-paper'),
+      crypto: venueOf(pick(env, 'BOURSE_VENUE_CRYPTO'), 'BOURSE_VENUE_CRYPTO', 'binance-testnet'),
+    },
   };
 }
 

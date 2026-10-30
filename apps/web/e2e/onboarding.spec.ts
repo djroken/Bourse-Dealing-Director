@@ -25,7 +25,7 @@ test("opens on first run and walks through all six steps", async ({ page, errors
 
   await next(page);
   await expect(onb).toContainText("STEP 04 OF 06");
-  await expect(onb.locator(".hz-onb-card")).toHaveCount(8);
+  await expect(onb.locator(".hz-onb-card")).toHaveCount(10);
 
   await next(page);
   await expect(onb).toContainText("STEP 05 OF 06");
@@ -53,13 +53,13 @@ test("runtime is a single choice and shows its credential field", async ({ page 
   await expect(claude).toHaveAttribute("aria-checked", "false");
 });
 
-test("venues are coming-soon placeholders: no selection, no key fields", async ({ page }) => {
+test("live venues are coming-soon placeholders: no selection, no key fields", async ({ page }) => {
   await openDesk(page);
   await page.locator(".hz-onb-rail-item", { hasText: "Venues" }).click();
   const venues = page.locator(".hz-onb-card");
-  await expect(venues).toHaveCount(8);
+  await expect(venues).toHaveCount(10); // paper, two broker sandboxes, seven live placeholders
   await expect(page.locator(".hz-onb-card[data-soon]")).toHaveCount(7);
-  await page.locator(".hz-onb-card", { hasText: "Binance" }).click({ force: true });
+  await page.locator(".hz-onb-card[data-soon]", { hasText: "Binance" }).click({ force: true });
   await expect(page.locator(".hz-onb input")).toHaveCount(0);
   await expect(page.locator(".hz-onb-card", { hasText: "Paper venue" })).toHaveAttribute("aria-checked", "true");
 });

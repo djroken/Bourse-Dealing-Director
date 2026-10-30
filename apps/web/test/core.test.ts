@@ -312,3 +312,27 @@ describe("floor conversation", () => {
     expect(buildView(m).sel!.usageNote).toContain("counted by core");
   });
 });
+
+describe("broker paper fills", () => {
+  const decision = (over: Record<string, unknown> = {}) => ({
+    type: "decision", agentId: "TKT-004", role: roleOf("Pico"), symbol: "BTC-USDT", action: "BUY", size: 0.01234, price: 96_500, riskChecked: true,
+    rationale: "Approved by operator · filled on Binance testnet, order 42 · within risk limits", venue: "binance-testnet", venueOrderId: "42", ts: 5, ...over,
+  });
+  it("a broker fill says where it filled, in the chat and the blotter", () => {
+    expect(AgentDecisionSchema.safeParse(decision()).success).toBe(true);
+    const s = base();
+    const p = applyCoreMsg(s, parseCoreMsg(decision())!)!;
+    expect(p.fills![0]).toMatchObject({ venue: "binance-testnet", q: 0.01234, px: 96_500 });
+    expect(p.seq!.at(-1)!.sysText).toContain("Binance testnet (play money) · risk checked");
+    expect(buildView({ ...s, ...p }).fills[0]!.status).toBe("TESTNET");
+    const paper = applyCoreMsg(s, parseCoreMsg(decision({ venue: undefined }))!)!;
+    expect(paper.seq!.at(-1)!.sysText).toContain(" · paper · risk checked");
+    expect(buildView({ ...s, ...paper }).fills[0]!.status).toBe("PAPER");
+  });
+  it("a broker refusal is reported as not filled, not as a risk veto; unknown venues are dropped", () => {
+    const s = base();
+    const p = applyCoreMsg(s, parseCoreMsg(decision({ action: "HOLD", size: 0, riskChecked: false, rationale: "Binance testnet refused the order: insufficient balance" }))!)!;
+    expect(p.seq!.at(-1)!.sysText).toContain("not filled: Binance testnet refused the order: insufficient balance");
+    expect(parseCoreMsg(decision({ venue: "binance-live" }))).not.toHaveProperty("venue");
+  });
+});

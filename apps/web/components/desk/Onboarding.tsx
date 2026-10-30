@@ -11,6 +11,7 @@ import type { DeskView } from "@/lib/desk/view";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { CoreSecrets } from "@/lib/desk/useCoreSecrets";
 import { useCoreSecrets } from "@/lib/desk/useCoreSecrets";
+import { brokerLine, checkVenue, fetchVenues, setVenue, type BrokerId, type BrokerStatus } from "@/lib/desk/venues";
 import { ThemeSwitch } from "./Footer";
 import { m } from "./ui";
 
@@ -66,6 +67,7 @@ function ItemCard({ st, it, s, a, core }: { st: OnbStep; it: OnbItem; s: DeskSta
         <span className="hz-onb-tag" data-kind={kind}>{tag}</span>
       </div>
       <div className="hz-onb-desc">{it.desc}</div>
+      {on && it.broker && <BrokerRow id={it.broker} />}
       {on && !soon && it.fields.length > 0 && (
         <div className="hz-onb-fields" onClick={(e) => e.stopPropagation()}>
           {it.fields.map((f) => {
@@ -97,6 +99,62 @@ function ItemCard({ st, it, s, a, core }: { st: OnbStep; it: OnbItem; s: DeskSta
           })}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Core's routing switch and a key check for a broker paper account. Only shown on its card when the card is selected. */
+function BrokerRow({ id }: { id: BrokerId }) {
+  const [list, setList] = useState<BrokerStatus[] | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [check, setCheck] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    let live = true;
+    void fetchVenues().then((v) => live && setList(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const st = list?.find((v) => v.id === id);
+  const coreUp = list !== null;
+  return (
+    <div className="hz-onb-broker" data-testid={`broker-${id}`} onClick={(e) => e.stopPropagation()}>
+      <span className="hz-onb-secret-note" data-routing={st?.routing || undefined}>{list === undefined ? "Checking core…" : brokerLine(st, coreUp)}</span>
+      {st && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button
+            className="hz-btn hz-btn--sm"
+            data-on={st.enabled}
+            aria-pressed={st.enabled}
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void setVenue(id, !st.enabled).then((v) => {
+                setBusy(false);
+                if (v) setList(v);
+              });
+            }}
+          >
+            {st.enabled ? "STOP ROUTING" : "ROUTE APPROVED ORDERS HERE"}
+          </button>
+          <button
+            className="hz-btn hz-btn--sm"
+            disabled={busy || !st.keySet}
+            title={st.keySet ? "One read-only call to the sandbox account" : "Save a key first"}
+            onClick={() => {
+              setBusy(true);
+              setCheck(null);
+              void checkVenue(id).then((r) => {
+                setBusy(false);
+                setCheck(r);
+              });
+            }}
+          >
+            CHECK KEY
+          </button>
+        </div>
+      )}
+      {check && <span className="hz-onb-secret-note" data-ok={check.ok} role="status">{check.text}</span>}
     </div>
   );
 }
