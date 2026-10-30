@@ -427,6 +427,12 @@ export function useDesk({ tickMs = 2200, autoplay = true, core: coreEnabled = tr
         patch((st) => {
           const v = st.draft.trim();
           if (!v) return null;
+          // With core connected the floor is real: core echoes the owner's words and the agents answer in a round.
+          const ws = coreWs.current;
+          if (st.core === "live" && ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "instruct", text: v.slice(0, 400) }));
+            return { draft: "" };
+          }
           const t = Date.now();
           return {
             draft: "",

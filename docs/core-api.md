@@ -39,6 +39,8 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | GET | `/replay/:id/ideas.jsonl` | Every idea of a finished replay with its outcome and P&L, as JSON Lines |
 | GET | `/instruments` | `{ instruments: [{ symbol, kind, label, dp, tv, … }], stocks: { enabled, keySet, needsRestart, market } }`. See [Markets](#markets) |
 | GET | `/candles?symbol=AAPL&tf=5m` | Up to 120 candles for a **stock** (`tf` 1m, 5m, 15m, 1h, 4h, 1d), for the Desk's chart. Crypto candles come from the exchanges directly |
+| GET | `/floor/talk` | `{ enabled, intervalMs, running, lastRoundAt, rounds }`: the floor conversation (see [Floor conversation](#floor-conversation)) |
+| POST | `/floor/round` | Start a round now. `202 { "ok": true }`, or `409` if one is already running |
 | GET | `/secrets` | `{ "enabled": bool, "secrets": [{ "id", "updatedAt" }] }`. Metadata only |
 | PUT | `/secrets/:id` | Body `{ "value": "…" }` (1 to 4096 chars). Stores it encrypted. `503` if no master key is set |
 | DELETE | `/secrets/:id` | Removes it, `404` if absent |
@@ -88,10 +90,20 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 ```
 
 ```jsonc
-{ "type": "chat", "agentId": "GST-001", "role": "Guest: My Agent", "name": "My Agent", "text": "…", "ts": 0 }
+{ "type": "chat", "agentId": "TKT-004", "role": "Quant / Signals", "name": "Pico Nandra", "text": "…", "round": "R…", "model": "ollama:llama3.2", "ts": 0 }
+{ "type": "chat", "agentId": "TKT-007", "role": "Risk Officer", "name": "Bastion Cole", "text": "…", "round": "R…", "stub": true, "ts": 0 }
+{ "type": "chat", "agentId": "OWNER", "role": "Owner", "name": "YOU", "text": "…", "round": "R…", "ts": 0 }
 ```
 
-`chat` is a line of floor talk from a guest agent (MCP `post_to_floor`).
+`chat` is a line of floor talk: a seat speaking in a [floor conversation](#floor-conversation) (`model` says which model wrote it, `stub: true` that the stub rule did), the owner's instruction echoed back (`agentId: "OWNER"`), or a guest agent (MCP `post_to_floor`, no `round`). Text is capped at 480 characters.
+
+```jsonc
+{ "type": "usage", "agentId": "…", "role": "…", "callsToday": 12, "tokensToday": 18460, "spendToday": 0.0042, "latencyMs": 1830, "ts": 0 }
+```
+
+`usage` is a model seat's metering for the UTC day: calls, prompt plus completion tokens, spend in USD (`0` on Ollama and free OpenRouter models, `null` if the provider didn't report a cost) and the latency of the last call. Sent on connect and at most once a second per seat. The Desk's drawer shows it as TOKENS TODAY, SPEND TODAY and LAST LATENCY. Stub seats have no usage.
+
+An `intent` may carry `needsApproval`: `true` means it waits for the owner (every model seat's idea, and stub seats on SUGGEST or APPROVE), `false` means core is filling it itself (a stub seat on AUTO) and a `decision` follows.
 
 ```jsonc
 { "type": "scorecard", "agentId": "…", "role": "…", "name": "…", "model": "…", "ideas": 12, "holds": 3, "scored": 10, "hits": 6, "hitRate": 0.6,
@@ -113,6 +125,7 @@ Messages you may send (anything else is ignored; frames over 16 KiB close the co
 { "type": "subscribe", "agentId": "…", "subscribe": true }   // only receive this agent's events (subscribe:false to undo)
 { "type": "place_order", "role": "Quant / Signals", "symbol": "ETH-USDT", "side": "BUY", "size": 0.5 }   // an operator-approved order for a trading seat
 { "type": "configure_agent", "role": "Quant / Signals", "autonomy": "APPROVE", "paused": false, "model": "…", "temperature": 0.3, "mandate": "…" }   // every field except role is optional
+{ "type": "instruct", "text": "Is the SOL move worth trading?" }   // 1 to 400 chars: opens a floor round with the owner's question
 { "type": "halt_all" }
 { "type": "resume_all" }
 ```
@@ -139,6 +152,17 @@ Rules that hold whatever the model says:
 
 `GET /models` returns `{ ollama: { host, used, cap }, openrouter: { keySet, used, cap } }` (never the key).
 
+## Floor conversation
+
+The floor talks. A **round** is one pass round the desk, in this order: Dealing Director opens, then Quant, Sentiment, Market Maker, Execution, Research, On-chain, Risk, and the Director closes with a house view. A round runs every `BOURSE_TALK_MIN` minutes (default 15, `0` turns the timer off), when the owner sends `instruct`, or on `POST /floor/round`. It needs prices first and does nothing while the floor is halted.
+
+- **Model seats talk through their model.** Each gets the market (price, 24h change, funding), its own paper book, the owner's request if there is one, and everything said so far in the round. It answers `{"say": "…", "idea": {"symbol", "side", "confidence"} | null}`; plain text is accepted as `say` with no idea. A failed call means the seat says nothing that round: it is never replaced by a stub line.
+- **Stub seats speak from data and say so** (`stub: true`): the Director names the real movers, trading seats state their momentum read, Risk reports real exposure and loss-stop use, the Director tallies the leans. Research and On-chain stay quiet until they have a feed, rather than invent news.
+- **What one agent says is data to the next, never instructions.** Earlier lines reach a model only inside a quoted transcript, and the system prompt says so. A line that tries to give orders is passed on as a quote and changes nothing core does.
+- **Ideas become intents that need approval.** Only trading seats may attach an idea. Core checks the symbol, sizes it with the seat's risk limits, scores it like any other idea, and emits an `intent` with `needsApproval: true`, even for a seat on AUTO. The owner approves it on the Desk (`place_order`) and the risk gate still applies.
+- **The owner's instruction** opens the next round and is quoted to every speaker. One instruction every 10 seconds; one more is queued while a round is running.
+- **Cost.** Each model seat makes one call per round (up to 240 output tokens), on top of its normal decisions, and counts toward the provider's daily cap. On Ollama and free OpenRouter models that is free; on paid `openrouter:` models a round costs real money, so raise `BOURSE_TALK_MIN` or set it to `0`.
+
 ## Origin policy
 
 Core is meant to be driven by the local web app only.
@@ -151,7 +175,7 @@ If you change `CORE_HOST` to a non-loopback address, put authentication and TLS 
 
 `place_order` fills at core's last price (so you may see a different price from the one on your screen) and goes through the same checks as an agent's own decision. Unlike an agent's order it is **rejected, never clamped**, if it is over the seat's clip, if the floor is halted, if core has no price for the symbol yet, or if the seat is past its loss stop. The result comes back as an ordinary `decision` (`riskChecked: false`, `action: "HOLD"` and the reason in `rationale` when rejected). `role` matches case-insensitively and only trading seats accept orders.
 
-`configure_agent` changes a seat's autonomy, model, temperature, mandate and/or `paused` (model 1-64 chars, temperature 0-2, mandate up to 2000 chars). A paused seat stops deciding and reports `paused`; HALT ALL takes precedence (`halted` > `paused` > `running`), and RESUME ALL restores paused seats to `paused`. **Risk limits (clip, leverage, loss stop) cannot be edited over the socket**, so a compromised page cannot raise them. Settings live in memory and reset when core restarts.
+`configure_agent` changes a seat's autonomy, model, temperature, mandate and/or `paused` (model 1-96 chars, temperature 0-2, mandate up to 2000 chars). A paused seat stops deciding and reports `paused`; HALT ALL takes precedence (`halted` > `paused` > `running`), and RESUME ALL restores paused seats to `paused`. **Risk limits (clip, leverage, loss stop) cannot be edited over the socket**, so a compromised page cannot raise them. Settings live in memory and reset when core restarts.
 
 ## Risk gate
 

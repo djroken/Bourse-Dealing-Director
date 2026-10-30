@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
-import type { Advisor } from './models';
+import type { Advisor, ModelUsage } from './models';
 import { DEFAULT_CRYPTO, type Instrument } from './instruments';
 import { createScorebook, type IdeaRecord, type ScoreDump, type Scorecard } from './scorecard';
 
@@ -84,6 +84,8 @@ export const InboundSchema = z.discriminatedUnion('type', [
     temperature: z.number().min(0).max(2).optional(),
     mandate: z.string().max(2000).optional(),
   }),
+  /** The owner speaks to the floor: starts a conversation round about it. */
+  z.object({ type: z.literal('instruct'), text: z.string().min(1).max(400) }),
   z.object({ type: z.literal('halt_all') }),
   z.object({ type: z.literal('resume_all') }),
 ]);
@@ -185,6 +187,8 @@ export function createEngine(opts: EngineOptions = {}) {
   };
 
   let floorHalted = false;
+  /** Set by the floor conversation (talk.ts). Without it, owner instructions are ignored. */
+  let onInstruct: ((text: string) => void) | undefined;
   /** Seats an operator paused one by one. Kept apart from HALT ALL so resuming the floor doesn't undo them. */
   const pausedSeats = new Set<string>();
   const stateOf = (a: FloorAgent): AgentState => (floorHalted ? 'halted' : pausedSeats.has(a.id) ? 'paused' : 'running');
@@ -223,7 +227,8 @@ export function createEngine(opts: EngineOptions = {}) {
   });
 
   /** Every intent goes through here so the scorebook sees it with the market context it was made in. */
-  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string): void => {
+  /** `needsApproval`: true unless core is about to fill it itself (a stub seat on AUTO). Model seats always need approval. */
+  const emitIntent = (agent: FloorAgent, symbol: string, tick: Tick, side: 'BUY' | 'SELL' | 'HOLD', size: number, confidence: number, rationale: string, needsApproval = true): void => {
     if (side === 'HOLD') scores.hold(ident(agent));
     else {
       scores.idea({
@@ -231,7 +236,7 @@ export function createEngine(opts: EngineOptions = {}) {
         price: tick.price, change24h: tick.change24h, source: tick.source,
       });
     }
-    broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence, rationale, ts: now() });
+    broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence, rationale, needsApproval: side !== 'HOLD' && needsApproval, ts: now() });
   };
 
   /** Every paper fill goes through here so the scorebook can count closes and wins. */
@@ -261,6 +266,7 @@ export function createEngine(opts: EngineOptions = {}) {
         .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed' }))
         .then((res) => {
           inFlight.delete(key);
+          recordUsage(agent, 'usage' in res ? res.usage : undefined);
           if (agent.state !== 'running' || agent.config.model !== modelId) return; // halted, paused or re-pointed while waiting
           const clip = agent.config.riskLimits.maxClip;
           if (res.ok) {
@@ -277,7 +283,7 @@ export function createEngine(opts: EngineOptions = {}) {
 
     const { side, size, confidence } = momentumIntent(tick.change24h, agent.config.riskLimits.maxClip, tick.price);
     const change = tick.change24h ?? 0;
-    emitIntent(agent, symbol, tick, side, size, confidence, `${agent.config.role} read ${tick.source}: ${change.toFixed(2)}% over 24h (stub momentum rule)`);
+    emitIntent(agent, symbol, tick, side, size, confidence, `${agent.config.role} read ${tick.source}: ${change.toFixed(2)}% over 24h (stub momentum rule)`, agent.config.autonomy !== 'AUTO');
 
     // SUGGEST and APPROVE agents stop at the intent: a human (or the approvals queue) decides.
     if (agent.config.autonomy !== 'AUTO' || side === 'HOLD') return;
@@ -361,6 +367,67 @@ export function createEngine(opts: EngineOptions = {}) {
     broadcast(configMsg(guest));
     log.info(`guest agent joined: ${name}`);
     return guest;
+  };
+
+  // ---- model usage per seat, today (UTC) --------------------------------------------------------------------------
+  interface Usage { day: string; calls: number; tokens: number; spend: number; spendKnown: boolean; latencyMs: number | null }
+  const usageBy = new Map<string, Usage>();
+  const usageSent = new Map<string, number>();
+  const usageMsg = (a: FloorAgent): FloorMsg => {
+    const u = usageBy.get(a.id);
+    const today = new Date(now()).toISOString().slice(0, 10);
+    const cur = u && u.day === today ? u : null;
+    return {
+      type: 'usage', agentId: a.id, role: a.config.role, callsToday: cur?.calls ?? 0, tokensToday: cur?.tokens ?? 0,
+      spendToday: cur ? (cur.spendKnown ? Number(cur.spend.toFixed(6)) : null) : 0, latencyMs: u?.latencyMs ?? null, ts: now(),
+    };
+  };
+  /** Count one model call against a seat and tell clients (at most once a second per seat). */
+  const recordUsage = (a: FloorAgent, u: ModelUsage | undefined): void => {
+    if (!u) return;
+    const today = new Date(now()).toISOString().slice(0, 10);
+    let cur = usageBy.get(a.id);
+    if (!cur || cur.day !== today) cur = { day: today, calls: 0, tokens: 0, spend: 0, spendKnown: true, latencyMs: null };
+    cur.calls += 1;
+    cur.tokens += Math.round(u.promptTokens + u.completionTokens);
+    if (u.costUsd === null) cur.spendKnown = false;
+    else cur.spend += u.costUsd;
+    cur.latencyMs = Math.round(u.latencyMs);
+    usageBy.set(a.id, cur);
+    const t = now();
+    if (t - (usageSent.get(a.id) ?? 0) >= 1000) {
+      usageSent.set(a.id, t);
+      broadcast(usageMsg(a));
+    }
+  };
+
+  /** Clean text for the floor: no control characters, collapsed whitespace, capped. */
+  // eslint-disable-next-line no-control-regex
+  const clean = (raw: string, max: number) => raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+
+  /** A seat (or the owner) says something in the floor conversation. No rate limit: core decides who speaks when. */
+  const speak = (who: { id: string; role: string; name: string }, raw: string, meta: { round?: string; model?: string; stub?: boolean } = {}): string | null => {
+    const text = clean(raw, 480);
+    if (!text) return null;
+    broadcast({ type: 'chat', agentId: who.id, role: who.role, name: who.name, text, ts: now(), ...meta });
+    return text;
+  };
+
+  /**
+   * An idea raised in conversation becomes an intent like any other: sized by core, counted on the scorecard, and
+   * (for SUGGEST/APPROVE seats, and every model seat) waiting for a human. Refused for seats that don't trade.
+   */
+  const proposeIdea = (agent: FloorAgent, symbol: string, side: 'BUY' | 'SELL', confidence: number, rationale: string): { ok: true; size: number } | { ok: false; reason: string } => {
+    if (!agent.config.trades || agent.external) return { ok: false, reason: 'this seat does not trade' };
+    if (agent.state !== 'running') return { ok: false, reason: 'seat is not running' };
+    if (!bySymbol.has(symbol)) return { ok: false, reason: 'not an instrument on this floor' };
+    const tick = lastTick.get(symbol);
+    if (!tick) return { ok: false, reason: 'no price yet' };
+    if (tick.marketOpen === false) return { ok: false, reason: 'market closed' };
+    const it = sizeIntent(side, confidence, agent.config.riskLimits.maxClip, tick.price);
+    if (it.side === 'HOLD') return { ok: false, reason: 'too small to size' };
+    emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, clean(rationale, 240));
+    return { ok: true, size: it.size };
   };
 
   const post = (agent: FloorAgent, raw: string): { ok: true } | { ok: false; reason: string } => {
@@ -516,6 +583,17 @@ export function createEngine(opts: EngineOptions = {}) {
     haltAll,
     resumeAll,
 
+    // ---- floor conversation (talk.ts) ----
+    setInstructHandler(fn: ((text: string) => void) | undefined): void {
+      onInstruct = fn;
+    },
+    speak,
+    proposeIdea,
+    recordUsage,
+    /** Latest tick per symbol, for the conversation's market picture. */
+    ticks: () => new Map(lastTick),
+    advisor,
+
     // ---- for guest agents (MCP) ----
     registerGuest,
     submitOrder,
@@ -580,6 +658,7 @@ export function createEngine(opts: EngineOptions = {}) {
       for (const a of agents) ws.send(JSON.stringify(configMsg(a)));
       for (const a of agents) if (hasBook(a)) ws.send(JSON.stringify(pnlMsg(a)));
       for (const c of scores.cards()) ws.send(JSON.stringify(scorecardMsg(c)));
+      for (const a of agents) if (usageBy.has(a.id)) ws.send(JSON.stringify(usageMsg(a)));
       log.info(`floor client connected (${clients.size})`);
 
       ws.on('message', (raw) => {
@@ -604,6 +683,8 @@ export function createEngine(opts: EngineOptions = {}) {
           configure(role, patch);
         } else if (msg.type === 'place_order') {
           placeOrder(msg.role, msg.symbol, msg.side, msg.size);
+        } else if (msg.type === 'instruct') {
+          onInstruct?.(msg.text);
         } else if (msg.type === 'halt_all') {
           haltAll();
         } else {

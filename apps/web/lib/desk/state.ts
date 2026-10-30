@@ -21,6 +21,11 @@ export interface SeqEvent {
   user?: string;
   reply?: string;
   sysText?: string;
+  /** A seat speaking in core's floor conversation: seat index, what it said, and who wrote it. */
+  agent?: number;
+  say?: string;
+  model?: string;
+  stub?: boolean;
 }
 export interface Fill {
   side: Side;

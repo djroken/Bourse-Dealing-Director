@@ -64,12 +64,22 @@ export interface AdvisorOptions {
   timeoutMs?: number;
 }
 
-export type AdvisorResult = { ok: true; view: ModelView } | { ok: false; reason: string };
+/** What one model call cost. Tokens and latency always; USD only when the provider reports it (OpenRouter does). */
+export interface ModelUsage {
+  promptTokens: number;
+  completionTokens: number;
+  latencyMs: number;
+  costUsd: number | null;
+}
+export type AdvisorResult = { ok: true; view: ModelView; usage?: ModelUsage } | { ok: false; reason: string; usage?: ModelUsage };
+export type ConverseResult = { ok: true; text: string; usage?: ModelUsage } | { ok: false; reason: string; usage?: ModelUsage };
 
 export interface Advisor {
   /** Whether this model id would be handled by an adapter (even if it later fails). */
   handles(modelId: string): boolean;
   advise(modelId: string, ctx: MarketContext, temperature: number): Promise<AdvisorResult>;
+  /** A free-form reply for the floor conversation. The caller parses and cleans it; nothing here trusts the text. */
+  converse?(modelId: string, prompt: { system: string; user: string }, temperature: number, maxTokens?: number): Promise<ConverseResult>;
   status(): { ollama: { host: string; used: number; cap: number }; openrouter: { keySet: boolean; used: number; cap: number } };
 }
 
@@ -156,34 +166,51 @@ export function createAdvisor(opts: AdvisorOptions = {}): Advisor {
     const c = provider === 'ollama' ? j?.message?.content : j?.choices?.[0]?.message?.content;
     return typeof c === 'string' ? c : '';
   };
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : 0);
+  const usageOf = (json: unknown, provider: ProviderName, latencyMs: number): ModelUsage => {
+    const j = (json ?? {}) as Record<string, unknown>;
+    if (provider === 'ollama') return { promptTokens: n(j.prompt_eval_count), completionTokens: n(j.eval_count), latencyMs, costUsd: 0 };
+    const u = (j.usage ?? {}) as Record<string, unknown>;
+    return { promptTokens: n(u.prompt_tokens), completionTokens: n(u.completion_tokens), latencyMs, costUsd: typeof u.cost === 'number' && Number.isFinite(u.cost) ? u.cost : null };
+  };
+
+  /** One chat completion. Every guard (free-only, key, daily cap) applies to every kind of call. */
+  async function complete(modelId: string, messages: Array<{ role: string; content: string }>, temperature: number, maxTokens: number): Promise<{ ok: true; text: string; usage: ModelUsage } | { ok: false; reason: string; usage?: ModelUsage }> {
+    const ref = parseModelRef(modelId);
+    if (!ref) return { ok: false, reason: 'not a model seat' };
+    const t0 = now();
+    if (ref.provider === 'openrouter') {
+      if (ref.freeOnly && !isFreeOpenRouterModel(ref.model)) return { ok: false, reason: 'OpenRouter free seats only take ":free" models' };
+      const key = opts.openrouterKey?.();
+      if (!key) return { ok: false, reason: 'no OpenRouter key saved in core' };
+      if (overCap('openrouter')) return { ok: false, reason: `daily cap of ${cap.openrouter} OpenRouter calls reached` };
+      usage.openrouter.n++; // count the attempt, not the success: a failing call still spends quota
+      const res = await post('https://openrouter.ai/api/v1/chat/completions', { Authorization: `Bearer ${key}` }, { model: ref.model, messages, temperature, max_tokens: maxTokens, usage: { include: true } });
+      if (!res.ok) return res;
+      return { ok: true, text: textOf(res.json, 'openrouter'), usage: usageOf(res.json, 'openrouter', now() - t0) };
+    }
+    if (overCap('ollama')) return { ok: false, reason: `daily cap of ${cap.ollama} Ollama calls reached` };
+    usage.ollama.n++;
+    const res = await post(`${ollamaHost}/api/chat`, {}, { model: ref.model, messages, stream: false, options: { temperature, num_predict: maxTokens } });
+    if (!res.ok) return res;
+    return { ok: true, text: textOf(res.json, 'ollama'), usage: usageOf(res.json, 'ollama', now() - t0) };
+  }
 
   return {
     handles: (id) => parseModelRef(id) !== undefined,
 
     async advise(modelId, ctx, temperature) {
-      const ref = parseModelRef(modelId);
-      if (!ref) return { ok: false, reason: 'not a model seat' };
       const { system, user } = buildPrompt(ctx);
-      const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
-
-      if (ref.provider === 'openrouter') {
-        if (ref.freeOnly && !isFreeOpenRouterModel(ref.model)) return { ok: false, reason: 'OpenRouter free seats only take ":free" models' };
-        const key = opts.openrouterKey?.();
-        if (!key) return { ok: false, reason: 'no OpenRouter key saved in core' };
-        if (overCap('openrouter')) return { ok: false, reason: `daily cap of ${cap.openrouter} OpenRouter calls reached` };
-        usage.openrouter.n++; // count the attempt, not the success: a failing call still spends quota
-        const res = await post('https://openrouter.ai/api/v1/chat/completions', { Authorization: `Bearer ${key}` }, { model: ref.model, messages, temperature, max_tokens: 200 });
-        if (!res.ok) return res;
-        const view = parseModelView(textOf(res.json, 'openrouter'));
-        return view ? { ok: true, view } : { ok: false, reason: 'reply was not the expected JSON' };
-      }
-
-      if (overCap('ollama')) return { ok: false, reason: `daily cap of ${cap.ollama} Ollama calls reached` };
-      usage.ollama.n++;
-      const res = await post(`${ollamaHost}/api/chat`, {}, { model: ref.model, messages, stream: false, options: { temperature, num_predict: 200 } });
+      const res = await complete(modelId, [{ role: 'system', content: system }, { role: 'user', content: user }], temperature, 200);
       if (!res.ok) return res;
-      const view = parseModelView(textOf(res.json, 'ollama'));
-      return view ? { ok: true, view } : { ok: false, reason: 'reply was not the expected JSON' };
+      const view = parseModelView(res.text);
+      return view ? { ok: true, view, usage: res.usage } : { ok: false, reason: 'reply was not the expected JSON', usage: res.usage };
+    },
+
+    async converse(modelId, prompt, temperature, maxTokens = 240) {
+      const res = await complete(modelId, [{ role: 'system', content: prompt.system }, { role: 'user', content: prompt.user }], temperature, maxTokens);
+      if (!res.ok) return res;
+      return res.text.trim() ? { ok: true, text: res.text, usage: res.usage } : { ok: false, reason: 'empty reply', usage: res.usage };
     },
 
     status: () => ({
