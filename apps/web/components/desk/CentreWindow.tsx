@@ -24,6 +24,9 @@ export function ChatLine({ r }: { r: ChatRow }) {
   if (r.kind === "sys") {
     return <div style={m(11, "0.08em", r.tint)}>{r.text}</div>;
   }
+  if (r.kind === "round") {
+    return <div className="hz-round" role="separator" aria-label={r.text}><span>{r.text}</span></div>;
+  }
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>

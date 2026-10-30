@@ -277,6 +277,18 @@ describe("floor conversation", () => {
     expect(rows[0]!.role).toContain("ollama:llama3.2");
     expect(rows[1]!.role).toContain("STUB RULE");
   });
+  it("each round starts with a divider that says when and how many seats spoke", () => {
+    let s: DeskState = { ...base(), core: "live", seq: [] };
+    const add = (over: Record<string, unknown>) => (s = { ...s, ...applyCoreMsg(s, parseCoreMsg(chat(over))!)! });
+    add({ agentId: "OWNER", role: "Owner", name: "YOU", text: "SOL?", round: "R1", ts: Date.UTC(2026, 9, 30, 15, 30) });
+    add({ round: "R1" });
+    add({ agentId: "TKT-007", role: roleOf("Bastion"), name: "Bastion Cole", text: "No open risk.", stub: true, round: "R1" });
+    add({ round: "R2", ts: Date.UTC(2026, 9, 30, 15, 45) });
+    const rows = buildView(s).chat;
+    expect(rows.map((r) => r.kind)).toEqual(["round", "msg", "msg", "msg", "round", "msg"]);
+    expect(rows[0]!.text).toBe("FLOOR ROUND · 15:30 UTC · 2 speakers");
+    expect(rows[4]!.text).toBe("FLOOR ROUND · 15:45 UTC · 1 speaker");
+  });
   it("the owner's echoed words show as YOU; unknown seats are ignored", () => {
     const s = base();
     const p = applyCoreMsg(s, parseCoreMsg(chat({ agentId: "OWNER", role: "Owner", name: "YOU", text: "flatten SOL" }))!)!;

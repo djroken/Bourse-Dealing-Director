@@ -192,10 +192,10 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
   }
   if (m.type === "chat") {
     // The owner's own words (core echoes them), then any seat speaking in a floor round.
-    if (m.agentId === "OWNER") return { seq: push(s.seq, { user: m.text, t: m.ts }) };
+    if (m.agentId === "OWNER") return { seq: push(s.seq, { user: m.text, t: m.ts, ...(m.round ? { round: m.round } : {}) }) };
     const i = seatOf(s, m.role);
     if (i < 0) return null;
-    return { seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}) }) };
+    return { seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}) }) };
   }
   if (m.type === "usage") {
     const i = seatOf(s, m.role);

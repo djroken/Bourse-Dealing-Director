@@ -192,6 +192,9 @@ a:hover {
   align-items: center;
   overflow-x: auto;
   overflow-y: hidden;
+  /* When the tape is cut off by the right-hand cluster, fade it out rather than slice a cell mid-word. */
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent);
 }
 .hz-tape-cell {
   flex: none;
@@ -1700,3 +1703,8 @@ a:hover {
 .hz-onb-broker .hz-onb-secret-note[data-ok="false"] { color: var(--cFF7A7A); }
 .hz-onb-broker .hz-btn[data-on="true"] { border-color: rgba(255,158,44,0.5); color: var(--cFF9E2C); }
 .hz-onb-secret-ok { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9.5px; letter-spacing: 0.12em; color: var(--c3ECF8E); }
+
+/* Floor chat: where a conversation round starts. */
+.hz-round { display: flex; align-items: center; gap: 10px; padding: 4px 0 2px; font-family: var(--font-mono), ui-monospace, monospace; font-size: 9px; letter-spacing: 0.16em; color: var(--c6B7681); }
+.hz-round::before, .hz-round::after { content: ""; flex: 1; height: 1px; background: var(--w08); }
+.hz-round span { flex: none; }
