@@ -21,6 +21,8 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | `BOURSE_VENUE_CRYPTO` | `sim` | `binance-testnet` sends crypto orders you approve to the Binance spot testnet. |
 | `BINANCE_TESTNET_API_KEY`, `BINANCE_TESTNET_API_SECRET` | unset | Binance spot testnet key (testnet.binance.vision). Or save them in Setup as `venue.binance-testnet.key` / `.secret`. |
 | `BOURSE_NEWS_FEEDS` | CoinDesk, Cointelegraph, Decrypt, Federal Reserve | Public RSS/Atom feeds for headlines: comma-separated https URLs, optionally `Name=https://…`, at most 8. `off` turns news off. See [News](#news). |
+| `OPENROUTER_FREE_DAILY_CAP` | `45` | Calls a day to OpenRouter's free models, across every seat. OpenRouter allows 50 without credits, 1,000 with $10+ of credits. `0` = no limit. |
+| `BOURSE_FREE_BACKGROUND` | off | `on` lets free-model seats make background market checks too (they use the allowance fast). |
 | `BOURSE_TALK_LOG` | on | Write every floor-conversation model call to `<BOURSE_DATA_DIR>/talk.jsonl`. `off` to stop. |
 | `BOURSE_TALK_MIN` | `15` | Minutes between [floor conversation](#floor-conversation) rounds. `0` = only when you instruct the floor. |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
@@ -174,6 +176,7 @@ Rules that hold whatever the model says:
 - **Core sizes the order.** The model returns only `side`, `confidence` and a one-sentence rationale, validated against a strict schema. Anything else in its reply (a size, a symbol) is ignored; a bad reply counts as a failure.
 - **Failure falls back** to the stub rule, with the reason in the intent's rationale, and is still suggest-only.
 - **Throttled.** One call per seat and symbol per 5 minutes, never overlapping, and a daily cap per provider (`OPENROUTER_DAILY_CAP`, default 200; `OLLAMA_DAILY_CAP`, default unlimited; 0 = unlimited). Replies that arrive after a halt, pause or model change are dropped.
+- **Free models are rationed.** OpenRouter allows 50 free-model requests a day on an account that has bought less than $10 of credits (1,000 with more). So every `:free` call, from any seat, counts against one budget: `OPENROUTER_FREE_DAILY_CAP`, default 45, resetting at 00:00 UTC. Seats on free models make no background market checks (they think in floor rounds only; `BOURSE_FREE_BACKGROUND=on` changes that), and a scheduled round leaves the last 10 free calls for when the owner asks something. When the budget is used, the seat's `lastError` says so and how to raise it. `GET /models` and `/models/catalog` report `free: { used, cap }`.
 
 `GET /models` returns `{ ollama: { host, used, cap }, openrouter: { keySet, used, cap } }` (never the key).
 

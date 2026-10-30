@@ -74,7 +74,8 @@ Seats run a simple stub rule until you give them a model. No GPU needed:
 
 1. Make a free key at [openrouter.ai](https://openrouter.ai) and save it in Setup (step 02, OpenRouter, SAVE TO CORE). Or put `OPENROUTER_API_KEY=sk-or-…` in `.env` and restart `pnpm dev`.
 2. Click a seat, open the **Model** list and pick one under **OpenRouter · free** (the list comes live from OpenRouter). The drawer says whether core has the key, and shows the reason if a call fails.
-3. Type a question in the floor chat. The seats you gave a model answer through it; the rest are labelled STUB RULE.
+3. Free models share OpenRouter's free allowance (50 calls a day unless you've bought $10+ of credits), so free seats talk in floor rounds only and core keeps a few calls back for your own questions. The drawer shows how many are left. Two or three free seats is plenty.
+4. Type a question in the floor chat. The seats you gave a model answer through it; the rest are labelled STUB RULE.
 
 If you have the RAM, [Ollama](https://ollama.com) works too: installed models show under **Ollama on this machine**.
 

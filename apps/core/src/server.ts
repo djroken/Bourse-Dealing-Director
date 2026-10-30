@@ -53,6 +53,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   const advisor = createAdvisor({
     ollamaHost: config.ollamaHost,
     dailyCap: config.modelDailyCap,
+    freeDailyCap: config.freeDailyCap,
     // Read at call time: a key saved in Setup works without a restart. The env var is the fallback.
     openrouterKey: () => secrets?.get('model.openrouter.key') ?? (process.env.OPENROUTER_API_KEY?.trim() || undefined),
   });
@@ -91,7 +92,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     const id = inst ? venueFor(inst.kind) : undefined;
     return id && venueOn[id] ? venues[id] : undefined;
   };
-  const engine = deps.engine ?? createEngine({ log, advisor, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments, route });
+  const engine = deps.engine ?? createEngine({ log, advisor, freeBackground: config.freeBackground, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments, route });
   const instruments = engine.instruments();
   const stockSymbols = instruments.filter((i) => i.kind === 'stock').map((i) => i.symbol);
   const crypto = cryptoFeeds(instruments);
@@ -223,6 +224,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     getJson: (url) => feedDeps.fetchJson(url),
     ollamaHost: config.ollamaHost,
     openrouterKeySet: () => advisor.status().openrouter.keySet,
+    freeBudget: () => advisor.status().openrouter.free,
   });
   /** What the Desk's model picker offers: OpenRouter's free models and what's installed in Ollama, plus whether core has the OpenRouter key. */
   server.get('/models/catalog', async () => catalog.get());

@@ -110,3 +110,23 @@ describe('advisor', () => {
     expect(JSON.stringify(a.status())).not.toContain('sk-or-secret');
   });
 });
+
+describe('the free-model allowance', () => {
+  it('free models share their own daily budget (just under OpenRouter\'s 50), with a reason that says what to do', async () => {
+    const calls: Array<{ url: string; headers: Record<string, string>; body: any }> = [];
+    let t = Date.UTC(2026, 9, 30, 23, 0);
+    const a = createAdvisor({ fetcher: okFetch(GOOD, 'openrouter', calls), openrouterKey: () => 'sk-or-test', freeDailyCap: 2, now: () => t });
+    expect(a.freeLeft!()).toBe(2);
+    expect((await a.advise('openrouter-free:x/y:free', ctx, 0.2)).ok).toBe(true);
+    expect((await a.advise('openrouter:x/y:free', ctx, 0.2)).ok).toBe(true); // a :free model under either prefix counts
+    const third = await a.advise('openrouter-free:x/y:free', ctx, 0.2);
+    expect(third).toMatchObject({ ok: false, reason: expect.stringContaining("today's free-model budget is used (2 calls") });
+    expect(third.ok ? '' : third.reason).toContain('OPENROUTER_FREE_DAILY_CAP');
+    expect((await a.advise('openrouter:anthropic/claude-sonnet-4.5', ctx, 0.2)).ok).toBe(true); // paid models aren't held back
+    expect(a.status().openrouter.free).toEqual({ used: 2, cap: 2 });
+    expect(calls).toHaveLength(3);
+    t += 2 * 3_600_000; // next UTC day
+    expect(a.freeLeft!()).toBe(2);
+    expect(createAdvisor({ freeDailyCap: 0 }).freeLeft!()).toBeNull();
+  });
+});

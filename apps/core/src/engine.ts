@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { defaultAgents } from 'shared';
 import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
-import type { Advisor, ModelUsage } from './models';
+import { isFreeModelId, type Advisor, type ModelUsage } from './models';
 import { DEFAULT_CRYPTO, type Instrument } from './instruments';
 import type { Venue, VenueResult } from './venues';
 import type { Headline } from './news';
@@ -103,6 +103,11 @@ export interface EngineOptions {
   modelCooldownMs?: number;
   /** Asks real models for a view. Without one, every seat runs the stub rule. */
   advisor?: Advisor;
+  /**
+   * Free OpenRouter models share a small daily allowance, so by default their seats don't make background market
+   * checks: they think in floor rounds only. True restores background checks for them.
+   */
+  freeBackground?: boolean;
   log?: Logger;
   /** How long after an idea its outcome is scored. Default 15 minutes. */
   scoreHorizonMs?: number;
@@ -259,6 +264,7 @@ export function createEngine(opts: EngineOptions = {}) {
     const key = `${agent.id}:${symbol}`;
     const last = lastEval.get(key);
     const isModelSeat = !!advisor?.handles(agent.config.model);
+    if (isModelSeat && !opts.freeBackground && isFreeModelId(agent.config.model)) return; // saves the free allowance for the floor talk
     if (last !== undefined && now() - last < (isModelSeat ? modelCooldownMs : cooldownMs)) return;
     if (isModelSeat && inFlight.has(key)) return;
     lastEval.set(key, now());
