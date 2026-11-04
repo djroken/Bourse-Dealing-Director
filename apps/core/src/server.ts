@@ -21,6 +21,7 @@ import { createTalk, type RoundMemory, type TalkCall } from './talk';
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { createCatalog } from './catalog';
 import { createLeague } from './league';
+import { createLessons, type Lessons } from './lessons';
 import { createNewsDesk, fetchFeedText, type TextFetch } from './news';
 import { VENUE_LABEL, alpacaPaper, binanceTestnet, httpFetch, type HttpFetch, type Venue, type VenueId } from './venues';
 import { MAX_SECRET_LENGTH, SECRET_ID, openSecretStore, parseMasterKey, type SecretStore } from './secrets';
@@ -93,6 +94,9 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     const id = inst ? venueFor(inst.kind) : undefined;
     return id && venueOn[id] ? venues[id] : undefined;
   };
+  // Lessons are created once the engine exists; scored ideas reach them through this holder.
+  // eslint-disable-next-line prefer-const
+  let lessons: Lessons | undefined;
   // Floor settings the owner changes from the Desk, kept across restarts. An env var, when set, wins at start-up.
   const settingsFile = join(config.dataDir, 'settings.json');
   const savedSettings = ((): { modelAuto?: boolean } => {
@@ -104,7 +108,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       return {};
     }
   })();
-  const engine = deps.engine ?? createEngine({ log, advisor, freeBackground: config.freeBackground, modelAuto: config.modelAuto ?? savedSettings.modelAuto ?? false, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments, route });
+  const engine = deps.engine ?? createEngine({ log, advisor, freeBackground: config.freeBackground, modelAuto: config.modelAuto ?? savedSettings.modelAuto ?? false, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: (r) => { logIdea(r); lessons?.onResolved(r); }, notesFor: (id) => lessons?.notesFor(id) ?? [], instruments: built.instruments, route });
   const instruments = engine.instruments();
   const stockSymbols = instruments.filter((i) => i.kind === 'stock').map((i) => i.symbol);
   const crypto = cryptoFeeds(instruments);
@@ -315,9 +319,44 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       server.log.warn(`could not save ${memoryFile}: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
+  // ---- lessons: each model seat looks back at its scored ideas and writes itself a note -----------------------------
+  const lessonsFile = join(config.dataDir, 'lessons.json');
+  lessons = createLessons({
+    engine,
+    log,
+    initial: (() => {
+      if (!persist || !existsSync(lessonsFile)) return [];
+      try {
+        return JSON.parse(readFileSync(lessonsFile, 'utf8'));
+      } catch {
+        server.log.warn(`ignored ${lessonsFile}: not readable JSON`);
+        return [];
+      }
+    })(),
+    onSave: (all) => {
+      if (!persist) return;
+      try {
+        mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
+        writeFileSync(lessonsFile + '.tmp', JSON.stringify(all), { mode: 0o600 });
+        renameSync(lessonsFile + '.tmp', lessonsFile);
+      } catch (err) {
+        server.log.warn(`could not save ${lessonsFile}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    onCall: (rec) => {
+      if (config.talkLog === false) return;
+      ideaWrites = ideaWrites
+        .then(() => mkdir(config.dataDir, { recursive: true, mode: 0o700 }))
+        .then(() => appendFile(talkFile, JSON.stringify({ kind: 'lesson', ...rec }) + '\n', { mode: 0o600 }))
+        .catch(() => undefined);
+    },
+  });
+  /** Every seat's latest lessons, newest last. */
+  server.get('/lessons', async () => ({ lessons: lessons!.all() }));
   const talk = createTalk({
     engine,
     log,
+    notesFor: (id) => lessons!.notesFor(id),
     initialMemory: readMemory(),
     replies: config.talkReplies ?? 2,
     onMemory: saveMemory,
@@ -572,12 +611,14 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
       void pollOnce().finally(schedule);
       talk.start();
       news.start();
+      lessons!.start();
       return port;
     },
     async stop(): Promise<void> {
       stopped = true;
       talk.stop();
       news.stop();
+      lessons!.stop();
       clearInterval(saver);
       saveState();
       await ideaWrites;

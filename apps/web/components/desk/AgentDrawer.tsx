@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ALL_TOOLS, AUTONOMY, MODELS } from "@/lib/desk/data";
+import { fetchLessons, lessonLines, type LessonRow } from "@/lib/desk/lessons";
+import { isModelId } from "@/lib/desk/core";
 import { autoNote, customModelOk, fetchCatalog, keyLine, setModelAuto, type ModelCatalog } from "@/lib/desk/models";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskView } from "@/lib/desk/view";
@@ -110,6 +112,36 @@ function AutoNote({ cat, setCat, model, autonomy }: { cat: ModelCatalog | null; 
   );
 }
 
+/** What this seat has learned: the notes it wrote itself after its ideas were scored, newest first. */
+function LessonsList({ on, role, name }: { on: boolean; role: string; name: string }) {
+  const [all, setAll] = useState<LessonRow[] | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    const load = () => void fetchLessons().then((x) => live && setAll(x));
+    load();
+    const t = setInterval(load, 60_000);
+    return () => {
+      live = false;
+      clearInterval(t);
+    };
+  }, [on, role]);
+  if (!on || all === null) return null;
+  const rows = lessonLines(all, role);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }} data-testid="lessons">
+      <Label>LESSONS · WHAT {name.split(" ")[0]!.toUpperCase()} HAS LEARNED</Label>
+      {rows.length === 0 && <div style={m(9.5, undefined, "var(--c6B7681)", { lineHeight: 1.5 })}>None yet. A model seat writes itself a note after its ideas are scored, and reads it before its next calls.</div>}
+      {rows.map((r) => (
+        <div key={r.key} className="hz-lesson">
+          <div style={m(9, "0.08em", "var(--c5D6873)")}>{r.when} UTC{r.score ? ` · ${r.score}` : ""}</div>
+          <div style={{ fontSize: 12.5, lineHeight: 1.5, color: "var(--cC9D2DA)" }}>{r.text}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
   const [cat, setCat] = useCatalog(v.coreLive);
   const sel = v.sel;
@@ -191,6 +223,8 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
           </div>
           <AutoNote cat={cat} setCat={setCat} model={sel.model} autonomy={sel.autonomy} />
         </div>
+
+        <LessonsList on={v.coreLive && isModelId(sel.model)} role={sel.role} name={sel.name} />
 
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <Label>MANDATE</Label>

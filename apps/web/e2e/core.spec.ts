@@ -177,6 +177,9 @@ test("the model picker lists core's free OpenRouter models, says when core has n
   const core = await mockCore(page);
   await openDesk(page);
   await expect(page.locator(".hz-sim")).toContainText("CORE FLOOR");
+  await page.route(/127\.0\.0\.1:4000\/lessons/, (r) => r.fulfill({ json: { lessons: [
+    { agentId: "TKT-004", role: "Quant / Signals", name: "Pico Nandra", model: "openrouter-free:deepseek/deepseek-chat:free", text: "Chased a 4% day with no volume read. Wait for a pullback next time.", ideas: ["I1"], right: 0, of: 1, ts: Date.UTC(2026, 10, 4, 22, 0) },
+  ] } }));
   await page.locator(".hz-agent", { hasText: "Pico Nandra" }).click();
   const drawer = page.getByRole("dialog", { name: /Pico Nandra settings/ });
   const picker = drawer.getByLabel("Model", { exact: true });
@@ -185,6 +188,9 @@ test("the model picker lists core's free OpenRouter models, says when core has n
   await picker.selectOption("openrouter-free:deepseek/deepseek-chat:free");
   await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:deepseek/deepseek-chat:free")).toBe(true);
   await expect(drawer.getByTestId("model-key")).toContainText("core doesn't have it");
+  await expect(drawer.getByTestId("lessons")).toContainText("WHAT PICO HAS LEARNED");
+  await expect(drawer.getByTestId("lessons")).toContainText("Chased a 4% day with no volume read.");
+  await expect(drawer.getByTestId("lessons")).toContainText("0 of 1 right");
   await expect(drawer.getByTestId("model-key")).toContainText(".env");
 
   const custom = drawer.getByLabel("Custom model id");

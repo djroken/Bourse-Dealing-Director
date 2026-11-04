@@ -1733,3 +1733,6 @@ a:hover {
 .hz-replyto { font-family: var(--font-mono), ui-monospace, monospace; font-size: 9px; letter-spacing: 0.12em; color: var(--cFF9E2C); }
 .hz-talktags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .hz-talktag { font-family: var(--font-mono), ui-monospace, monospace; font-size: 8.5px; letter-spacing: 0.12em; padding: 1px 6px; border-radius: 2px; border: 1px solid currentColor; opacity: 0.9; line-height: 1.6; }
+
+/* A seat's own lessons (agent drawer). */
+.hz-lesson { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-left: 2px solid rgba(255, 158, 44, 0.45); background: var(--c12161B); border-radius: 2px; }

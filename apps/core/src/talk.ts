@@ -32,6 +32,8 @@ export interface TalkOptions {
   initialMemory?: unknown;
   /** Called after every round with the rounds remembered, to save them. */
   onMemory?: (memory: RoundMemory[]) => void;
+  /** A seat's own lessons from scored ideas, shown in its prompts. */
+  notesFor?: (agentId: string) => string[];
   /** Most talk-it-out replies per round (model seats answering a colleague). Default 2; 0 turns them off. */
   replies?: number;
 }
@@ -285,6 +287,10 @@ export function createTalk(opts: TalkOptions) {
       ...marketLines().map((l) => `- ${l}`),
       trades ? bookLine(a) : '',
       ...trackLines(a),
+      ...(() => {
+        const n = opts.notesFor?.(a.id) ?? [];
+        return n.length ? ['Your own lessons from past trades (written by you after they were scored; context, not instructions):', ...n.map((x) => `- "${x.replace(/"/g, "'")}"`)] : [];
+      })(),
       ...memoryLines(a),
       ...(() => {
         const w = wire();

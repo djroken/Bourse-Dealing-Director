@@ -40,6 +40,7 @@ const MOOD_COLOR: Record<string, string> = {
 /** Mood, stance and picks as small labelled tags: what a speaker feels and thinks, readable at a glance. */
 export function talkTags(e: SeqEvent): ChatRow["tags"] {
   const t: NonNullable<ChatRow["tags"]> = [];
+  if (e.lesson) t.push({ key: "lesson", label: "LESSON", color: "var(--cFF9E2C)", title: "A note the seat wrote itself after its ideas were scored; it reads it before its next calls" });
   if (e.mood) t.push({ key: "mood", label: e.mood.toUpperCase(), color: MOOD_COLOR[e.mood] ?? "var(--c98A3AD)", title: `Says they feel ${e.mood}` });
   if (e.stance) {
     const sym = e.stance.symbol.replace("-USDT", "");

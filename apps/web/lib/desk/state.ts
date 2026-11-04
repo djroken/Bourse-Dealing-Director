@@ -33,6 +33,8 @@ export interface SeqEvent {
   stance?: { symbol: string; view: "BULL" | "BEAR" | "FLAT"; conviction: number };
   picks?: string[];
   replyTo?: string;
+  /** A lesson the seat wrote itself after its ideas were scored. */
+  lesson?: boolean;
 }
 export const MOODS = ["confident", "excited", "calm", "cautious", "unsure", "sceptical", "worried"] as const;
 export type Mood = (typeof MOODS)[number];
