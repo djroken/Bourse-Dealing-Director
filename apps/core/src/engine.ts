@@ -14,6 +14,7 @@ export interface ChatMeta {
   stance?: { symbol: string; view: 'BULL' | 'BEAR' | 'FLAT'; conviction: number };
   picks?: string[];
   replyTo?: string;
+  lesson?: boolean;
 }
 import type { Venue, VenueResult } from './venues';
 import type { Headline } from './news';
@@ -124,6 +125,8 @@ export interface EngineOptions {
    * same risk gate as any order. Off: every model idea waits for the owner. Changeable at runtime (setModelAuto).
    */
   modelAuto?: boolean;
+  /** A seat's own lessons from scored ideas, passed to its model in background checks. */
+  notesFor?: (agentId: string) => string[];
   log?: Logger;
   /** How long after an idea its outcome is scored. Default 15 minutes. */
   scoreHorizonMs?: number;
@@ -290,7 +293,7 @@ export function createEngine(opts: EngineOptions = {}) {
       inFlight.add(key);
       const modelId = agent.config.model;
       void advisor!
-        .advise(modelId, { role: agent.config.role, mandate: agent.config.mandate, symbol, price: tick.price, change24h: tick.change24h }, agent.config.temperature)
+        .advise(modelId, { role: agent.config.role, mandate: agent.config.mandate, symbol, price: tick.price, change24h: tick.change24h, notes: opts.notesFor?.(agent.id) ?? [] }, agent.config.temperature)
         .catch((e: unknown) => ({ ok: false as const, reason: e instanceof Error ? e.message : 'failed' }))
         .then((res) => {
           inFlight.delete(key);

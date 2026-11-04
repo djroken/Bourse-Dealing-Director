@@ -92,6 +92,8 @@ export const AgentChatMsgSchema = z.object({
   picks: z.array(z.string().max(16)).max(3).optional(),
   /** First name of the colleague this line answers, in the talk-it-out part of a round. */
   replyTo: z.string().max(32).optional(),
+  /** A lesson the seat wrote itself after its ideas were scored. */
+  lesson: z.boolean().optional(),
 });
 
 /** A seat's model use today (UTC). `spendToday` is null when the provider doesn't report cost. */

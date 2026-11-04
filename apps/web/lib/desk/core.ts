@@ -16,7 +16,7 @@ export type CoreMsg =
   | { type: "lifecycle"; agentId: string; role: string; status: "initialized" | "running" | "paused" | "halted"; ts: number }
   | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number; needsApproval?: boolean }
   | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
-  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean; mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string }
+  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean; mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string; lesson?: boolean }
   | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; lastError?: string | null; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; venue?: BrokerId; ts: number }
@@ -51,8 +51,9 @@ function parseNews(raw: Record<string, unknown>): CoreMsg | null {
 
 const SYM = /^[A-Z0-9.]{1,12}(-USDT)?$/;
 /** Mood, stance, picks and reply-to on a floor-talk line: each checked, anything odd dropped. */
-function talkTags(raw: Record<string, unknown>): { mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string } {
-  const out: { mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string } = {};
+function talkTags(raw: Record<string, unknown>): { mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string; lesson?: boolean } {
+  const out: { mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string; lesson?: boolean } = {};
+  if (raw.lesson === true) out.lesson = true;
   if (typeof raw.mood === "string" && (MOODS as readonly string[]).includes(raw.mood)) out.mood = raw.mood as Mood;
   const st = raw.stance;
   if (isObj(st) && str(st.symbol, 16) && SYM.test(st.symbol) && (st.view === "BULL" || st.view === "BEAR" || st.view === "FLAT") && num(st.conviction) && st.conviction >= 0 && st.conviction <= 1) {
@@ -218,7 +219,7 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
     if (i < 0) return null;
     const stillThinking = { ...s.thinking };
     delete stillThinking[i];
-    return { thinking: stillThinking, seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}), ...(m.mood ? { mood: m.mood } : {}), ...(m.stance ? { stance: m.stance } : {}), ...(m.picks ? { picks: m.picks } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}) }) };
+    return { thinking: stillThinking, seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}), ...(m.mood ? { mood: m.mood } : {}), ...(m.stance ? { stance: m.stance } : {}), ...(m.picks ? { picks: m.picks } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}), ...(m.lesson ? { lesson: true } : {}) }) };
   }
   if (m.type === "thinking") {
     const i = seatOf(s, m.role);
