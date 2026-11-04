@@ -8,7 +8,7 @@ import { ApprovalCard, QueueClear } from "./ApprovalCard";
 import { ChartBody, ChartToggle, ChartTools } from "./Chart";
 import { GlassSlider, ThemeSwitch } from "./Footer";
 import { m } from "./ui";
-import { ChatLine } from "./CentreWindow";
+import { ChatLine, TalkTags } from "./CentreWindow";
 import { leagueView, useLeague } from "@/lib/desk/league";
 
 /** The model league as compact rows for the phone. */
@@ -113,10 +113,12 @@ export default function Mobile({ s, v, a }: { s: DeskState; v: DeskView; a: Desk
                     <>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
                         <span style={m(10.5, "0.06em", r.tint, { fontWeight: 600, flex: "none" })}>{r.who}</span>
+                        {r.replyTo && <span className="hz-replyto" style={{ flex: "none" }}>→ {r.replyTo.toUpperCase()}</span>}
                         {r.role && <span className="hz-ellipsis" style={m(8.5, "0.08em", "var(--c5D6873)", { whiteSpace: "nowrap", minWidth: 0 })}>{r.role}</span>}
                         <span style={m(9, undefined, "var(--c4E5862)", { flex: "none", marginLeft: "auto" })}>{r.time}</span>
                       </div>
                       <div style={{ fontSize: 14, lineHeight: 1.55, color: "var(--cC9D2DA)", textWrap: "pretty" }}>{r.text}</div>
+                      <TalkTags r={r} />
                     </>
                   )}
                   {r.kind === "trade" && (

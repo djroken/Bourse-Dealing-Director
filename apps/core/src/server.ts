@@ -319,6 +319,7 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     engine,
     log,
     initialMemory: readMemory(),
+    replies: config.talkReplies ?? 2,
     onMemory: saveMemory,
     onCall: logCall,
     headlines: () => news.latest(),

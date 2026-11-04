@@ -2,7 +2,7 @@ import { BROKER_IDS, BROKER_LABEL, type BrokerId } from "./venues";
 import { CORE_URL } from "./secrets";
 import { LBL, PERP, type Autonomy, type Side } from "./data";
 import { cm, fmt, fmtQty } from "./format";
-import type { Approval, CoreNews, DeskState, Fill, Score, SeqEvent } from "./state";
+import { MOODS, type Approval, type CoreNews, type DeskState, type Fill, type Mood, type Score, type SeqEvent } from "./state";
 import { walk } from "./format";
 
 /**
@@ -16,7 +16,7 @@ export type CoreMsg =
   | { type: "lifecycle"; agentId: string; role: string; status: "initialized" | "running" | "paused" | "halted"; ts: number }
   | { type: "intent"; agentId: string; role: string; symbol: string; side: Side | "HOLD"; size: number; confidence: number; rationale: string; ts: number; needsApproval?: boolean }
   | { type: "config"; agentId: string; role: string; name: string; model: string; temperature: number; autonomy: Autonomy; mandate: string; paused: boolean; riskLimits: { maxClip: number; maxLeverage: number; dailyLossStop: number }; ts: number }
-  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean }
+  | { type: "chat"; agentId: string; role: string; name: string; text: string; ts: number; round?: string; model?: string; stub?: boolean; mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string }
   | { type: "usage"; agentId: string; role: string; callsToday: number; tokensToday: number; spendToday: number | null; latencyMs: number | null; lastError?: string | null; ts: number }
   | { type: "pnl"; agentId: string; role: string; pnl: number; exposure: number; positions: Array<{ symbol: string; qty: number; avgPx: number }>; ts: number }
   | { type: "decision"; agentId: string; role: string; symbol: string; action: Side | "HOLD"; size: number; price: number; rationale: string; riskChecked: boolean; venue?: BrokerId; ts: number }
@@ -49,6 +49,23 @@ function parseNews(raw: Record<string, unknown>): CoreMsg | null {
   return { type: "news", id: raw.id, source: raw.source, title: raw.title, url, publishedAt: raw.publishedAt, tag: raw.tag as CoreNews["tag"], symbols, ts: raw.ts };
 }
 
+const SYM = /^[A-Z0-9.]{1,12}(-USDT)?$/;
+/** Mood, stance, picks and reply-to on a floor-talk line: each checked, anything odd dropped. */
+function talkTags(raw: Record<string, unknown>): { mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string } {
+  const out: { mood?: Mood; stance?: SeqEvent["stance"]; picks?: string[]; replyTo?: string } = {};
+  if (typeof raw.mood === "string" && (MOODS as readonly string[]).includes(raw.mood)) out.mood = raw.mood as Mood;
+  const st = raw.stance;
+  if (isObj(st) && str(st.symbol, 16) && SYM.test(st.symbol) && (st.view === "BULL" || st.view === "BEAR" || st.view === "FLAT") && num(st.conviction) && st.conviction >= 0 && st.conviction <= 1) {
+    out.stance = { symbol: st.symbol, view: st.view, conviction: st.conviction };
+  }
+  if (Array.isArray(raw.picks)) {
+    const p = raw.picks.filter((x): x is string => str(x, 16) && SYM.test(x)).slice(0, 3);
+    if (p.length) out.picks = p;
+  }
+  if (str(raw.replyTo, 32) && /^[A-Za-z][A-Za-z' -]{0,31}$/.test(raw.replyTo)) out.replyTo = raw.replyTo;
+  return out;
+}
+
 /** Returns a typed message, or null for anything that isn't exactly what core sends. */
 export function parseCoreMsg(raw: unknown): CoreMsg | null {
   if (isObj(raw) && raw.type === "news") return parseNews(raw);
@@ -65,6 +82,7 @@ export function parseCoreMsg(raw: unknown): CoreMsg | null {
       ...(str(raw.round, 32) ? { round: raw.round } : {}),
       ...(str(raw.model, 96) ? { model: raw.model } : {}),
       ...(raw.stub === true ? { stub: true } : {}),
+      ...talkTags(raw),
     };
   }
   if (raw.type === "thinking") return typeof raw.on === "boolean" ? { type: "thinking", agentId, role, on: raw.on, ts } : null;
@@ -200,7 +218,7 @@ export function applyCoreMsg(s: DeskState, m: CoreMsg): Partial<DeskState> | nul
     if (i < 0) return null;
     const stillThinking = { ...s.thinking };
     delete stillThinking[i];
-    return { thinking: stillThinking, seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}) }) };
+    return { thinking: stillThinking, seq: push(s.seq, { agent: i, say: m.text, t: m.ts, ...(m.model ? { model: m.model } : {}), ...(m.stub ? { stub: true } : {}), ...(m.round ? { round: m.round } : {}), ...(m.mood ? { mood: m.mood } : {}), ...(m.stance ? { stance: m.stance } : {}), ...(m.picks ? { picks: m.picks } : {}), ...(m.replyTo ? { replyTo: m.replyTo } : {}) }) };
   }
   if (m.type === "thinking") {
     const i = seatOf(s, m.role);

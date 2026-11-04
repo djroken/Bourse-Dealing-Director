@@ -24,6 +24,7 @@ Start it with `pnpm dev:core` (listens on `127.0.0.1:4000`). Configuration is by
 | `BOURSE_MODEL_AUTO` | saved setting (off) | `paper` lets model seats on AUTO trade their own ideas on the paper venue; `off` keeps them suggest-only. Overrides the setting saved from the Desk. |
 | `OPENROUTER_FREE_DAILY_CAP` | `45` | Calls a day to OpenRouter's free models, across every seat. OpenRouter allows 50 without credits, 1,000 with $10+ of credits. `0` = no limit. |
 | `BOURSE_FREE_BACKGROUND` | off | `on` lets free-model seats make background market checks too (they use the allowance fast). |
+| `BOURSE_TALK_REPLIES` | `2` | Talk-it-out answers per floor round (0 to 4). Each is one more model call. |
 | `BOURSE_TALK_LOG` | on | Write every floor-conversation model call to `<BOURSE_DATA_DIR>/talk.jsonl`. `off` to stop. |
 | `BOURSE_TALK_MIN` | `15` | Minutes between [floor conversation](#floor-conversation) rounds. `0` = only when you instruct the floor. |
 | `CORE_ALLOWED_ORIGINS` | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated browser origins allowed to call core. |
@@ -107,7 +108,7 @@ On connect you first receive one `lifecycle` message per agent. After that, ever
 ```
 
 ```jsonc
-{ "type": "chat", "agentId": "TKT-004", "role": "Quant / Signals", "name": "Pico Nandra", "text": "…", "round": "R…", "model": "ollama:llama3.2", "ts": 0 }
+{ "type": "chat", "agentId": "TKT-004", "role": "Quant / Signals", "name": "Pico Nandra", "text": "…", "round": "R…", "model": "ollama:llama3.2", "mood": "cautious", "stance": { "symbol": "SOL-USDT", "view": "BULL", "conviction": 0.55 }, "replyTo": "Kite", "ts": 0 }
 { "type": "chat", "agentId": "TKT-007", "role": "Risk Officer", "name": "Bastion Cole", "text": "…", "round": "R…", "stub": true, "ts": 0 }
 { "type": "chat", "agentId": "OWNER", "role": "Owner", "name": "YOU", "text": "…", "round": "R…", "ts": 0 }
 ```
@@ -186,7 +187,9 @@ Rules that hold whatever the model says:
 
 ## Floor conversation
 
-The floor talks. A **round** is one pass round the desk, in this order: Dealing Director opens, then Quant, Sentiment, Market Maker, Execution, Research, On-chain, Risk, and the Director closes with a house view. A round runs every `BOURSE_TALK_MIN` minutes (default 15, `0` turns the timer off), when the owner sends `instruct`, or on `POST /floor/round`. It needs prices first and does nothing while the floor is halted.
+The floor talks. A **round** goes like this: the Dealing Director opens; Research and On-chain bring the news and up to three **picks** (symbols the desk should look at); Quant, Sentiment, Market Maker and Execution give their read; Risk pushes back; then the floor **talks it out**: model seats that stand opposite a colleague on the same symbol, or were named by one after they spoke, answer that colleague once (at most `BOURSE_TALK_REPLIES` a round, default 2, as a back-and-forth where possible); and the Director closes with the house view: who is bull, who is bear, what goes to the owner.
+
+Every line can say how the speaker feels and where they stand: `mood` (confident, excited, calm, cautious, unsure, sceptical, worried) and `stance` (`BULL`/`BEAR`/`FLAT` on one floor symbol, with conviction 0..1). Model seats give their own; stub seats get them from the data (the size of the move, how much loss stop is used), never invented. Research's `picks` are passed to every later speaker. An answer carries `replyTo` with the colleague's first name. A round runs every `BOURSE_TALK_MIN` minutes (default 15, `0` turns the timer off), when the owner sends `instruct`, or on `POST /floor/round`. It needs prices first and does nothing while the floor is halted.
 
 - **Model seats talk through their model.** Each gets the market (price, 24h change, funding), its own paper book, the owner's request if there is one, and everything said so far in the round. It answers `{"say": "…", "idea": {"symbol", "side", "confidence"} | null}`; plain text is accepted as `say` with no idea. A failed call means the seat says nothing that round: it is never replaced by a stub line.
 - **Stub seats speak from data and say so** (`stub: true`): the Director names the real movers, trading seats state their momentum read, Risk reports real exposure and loss-stop use, the Director tallies the leans. Research quotes the newest headline that names the top mover (or the newest one), On-chain the newest on-chain headline, each with source and age and marked unverified. With no headlines they stay quiet rather than invent news.

@@ -6,7 +6,7 @@ import {
   APP_VERSION, LBL, NEWS, PERP, POS, RUNTIME_NAMES, SCRIPT, TINTS, allTape,
 } from "./data";
 import { cm, fmt, fmtQty, hms, money, path } from "./format";
-import { type DeskState, type Filter, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
+import { type DeskState, type Filter, type SeqEvent, type Tab, bookScale, capitalOf, rawPnl, venuesReady } from "./state";
 import { type ResolvedTheme } from "./theme";
 import { CORE_URL } from "./secrets";
 import { isModelId } from "./core";
@@ -27,6 +27,31 @@ export interface AgentCard {
 export interface ChatRow {
   key: string; time: string; kind: "msg" | "trade" | "sys" | "round" | "thinking"; who: string; role: string; tint: string; text: string;
   side: Side | ""; sideBg: string; sideColor: string; ticket: string;
+  /** Floor talk: "→ Kite" when the line answers a colleague. */
+  replyTo?: string;
+  /** Floor talk: how the speaker feels, where they stand, Research's picks. */
+  tags?: Array<{ key: string; label: string; color: string; title: string }>;
+}
+
+const MOOD_COLOR: Record<string, string> = {
+  confident: "var(--c3ECF8E)", excited: "var(--c3ECF8E)", calm: "var(--c98A3AD)",
+  cautious: "var(--cFFB13D)", unsure: "var(--cFFB13D)", sceptical: "var(--cFF7A7A)", worried: "var(--cFF7A7A)",
+};
+/** Mood, stance and picks as small labelled tags: what a speaker feels and thinks, readable at a glance. */
+export function talkTags(e: SeqEvent): ChatRow["tags"] {
+  const t: NonNullable<ChatRow["tags"]> = [];
+  if (e.mood) t.push({ key: "mood", label: e.mood.toUpperCase(), color: MOOD_COLOR[e.mood] ?? "var(--c98A3AD)", title: `Says they feel ${e.mood}` });
+  if (e.stance) {
+    const sym = e.stance.symbol.replace("-USDT", "");
+    const pctC = Math.round(e.stance.conviction * 100);
+    t.push({
+      key: "stance", label: e.stance.view === "FLAT" ? `FLAT ${sym}` : `${e.stance.view} ${sym} ${pctC}%`,
+      color: e.stance.view === "BULL" ? "var(--c3ECF8E)" : e.stance.view === "BEAR" ? "var(--cFF7A7A)" : "var(--c98A3AD)",
+      title: e.stance.view === "FLAT" ? `No view on ${e.stance.symbol}` : `${e.stance.view === "BULL" ? "Bullish" : "Bearish"} on ${e.stance.symbol}, ${pctC}% conviction`,
+    });
+  }
+  if (e.picks?.length) t.push({ key: "picks", label: "PICKS " + e.picks.map((x) => x.replace("-USDT", "")).join(" · "), color: "var(--cFF9E2C)", title: "Symbols Research wants the desk to look at this round" });
+  return t.length ? t : undefined;
 }
 export interface FillRow {
   key: string; time: string; side: Side; sym: string; qty: string; px: string; pnl: string; agent: string;
@@ -205,7 +230,10 @@ export function buildView(s: DeskState): DeskView {
     if (e.say !== undefined && e.agent !== undefined && s.agents[e.agent]) {
       // A seat speaking in core's floor conversation. The role line says who wrote it: a model, or the stub rule.
       const a = s.agents[e.agent]!;
-      return { ...base, who: a.name.split(" ")[0]!, role: a.role + (e.model ? " · " + e.model : e.stub ? " · STUB RULE" : ""), tint: TINTS[a.grp as Grp], text: e.say };
+      return {
+        ...base, who: a.name.split(" ")[0]!, role: a.role + (e.model ? " · " + e.model : e.stub ? " · STUB RULE" : ""), tint: TINTS[a.grp as Grp], text: e.say,
+        ...(e.replyTo ? { replyTo: e.replyTo } : {}), ...(talkTags(e) ? { tags: talkTags(e) } : {}),
+      };
     }
     const m = SCRIPT[e.i as number];
     const a = s.agents[m.who];

@@ -84,6 +84,14 @@ export const AgentChatMsgSchema = z.object({
   model: z.string().optional(),
   /** True when the line was written by core's stub rule from real data, not by a model. */
   stub: z.boolean().optional(),
+  /** How the speaker says they feel about the market this round. */
+  mood: z.enum(['confident', 'excited', 'calm', 'cautious', 'unsure', 'sceptical', 'worried']).optional(),
+  /** Where the speaker stands: bull, bear or flat on one floor symbol, with conviction 0..1. */
+  stance: z.object({ symbol: z.string().max(16), view: z.enum(['BULL', 'BEAR', 'FLAT']), conviction: z.number().min(0).max(1) }).optional(),
+  /** Research's picks: floor symbols it wants the desk to look at this round. */
+  picks: z.array(z.string().max(16)).max(3).optional(),
+  /** First name of the colleague this line answers, in the talk-it-out part of a round. */
+  replyTo: z.string().max(32).optional(),
 });
 
 /** A seat's model use today (UTC). `spendToday` is null when the provider doesn't report cost. */
