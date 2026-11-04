@@ -18,6 +18,11 @@ export interface LeagueRow {
   hitRate: number;
   /** Mean move in the ideas' direction at the horizon, percent. */
   avgReturnPct: number;
+  /** Mean move net of the market (BTC for coins, SPY for stocks), over the ideas that had a benchmark; null if none. */
+  avgAlphaPct: number | null;
+  alphaIdeas: number;
+  /** Ideas that beat the market. */
+  beat: number;
   /** Seats (roles) that used this model. */
   seats: string[];
   firstAt: number;
@@ -37,7 +42,7 @@ export interface League {
 const MODEL = /^(ollama|openrouter-free|openrouter):/;
 export const leagueKey = (model: string): string => (MODEL.test(model) ? model : model === 'external agent (MCP)' ? 'guest agents (MCP)' : 'stub rule');
 
-type Scored = Pick<IdeaRecord, 'id' | 'model' | 'role' | 'ts' | 'fallback' | 'rationale'> & { outcome: { returnPct: number; correct: boolean } };
+type Scored = Pick<IdeaRecord, 'id' | 'model' | 'role' | 'ts' | 'fallback' | 'rationale'> & { outcome: { returnPct: number; correct: boolean; alphaPct?: number } };
 /** A model's failed call fell back to the stub rule: credit the baseline, not the model. Older logs lack the flag. */
 const keyOf = (r: Scored): string => (r.fallback || / unavailable \(.*\); stub momentum rule instead$/.test(r.rationale ?? '') ? 'stub rule' : leagueKey(r.model));
 
@@ -50,11 +55,17 @@ const isScored = (r: unknown): r is Scored => {
 };
 
 export function tally(records: Iterable<Scored>, minIdeas = 1): LeagueRow[] {
-  const by = new Map<string, { ideas: number; hits: number; ret: number; seats: Set<string>; first: number; last: number }>();
+  const by = new Map<string, { ideas: number; hits: number; ret: number; alpha: number; alphaN: number; beat: number; seats: Set<string>; first: number; last: number }>();
   for (const r of records) {
     const k = keyOf(r);
-    const g = by.get(k) ?? { ideas: 0, hits: 0, ret: 0, seats: new Set<string>(), first: r.ts, last: r.ts };
+    const g = by.get(k) ?? { ideas: 0, hits: 0, ret: 0, alpha: 0, alphaN: 0, beat: 0, seats: new Set<string>(), first: r.ts, last: r.ts };
     g.ideas += 1;
+    const a = r.outcome.alphaPct;
+    if (typeof a === 'number' && Number.isFinite(a)) {
+      g.alpha += a;
+      g.alphaN += 1;
+      if (a > 0) g.beat += 1;
+    }
     if (r.outcome.correct) g.hits += 1;
     g.ret += r.outcome.returnPct;
     g.seats.add(r.role);
@@ -66,10 +77,12 @@ export function tally(records: Iterable<Scored>, minIdeas = 1): LeagueRow[] {
     .filter(([, g]) => g.ideas >= minIdeas)
     .map(([model, g]) => ({
       model, ideas: g.ideas, hits: g.hits, hitRate: g.hits / g.ideas, avgReturnPct: g.ret / g.ideas,
+      avgAlphaPct: g.alphaN ? g.alpha / g.alphaN : null, alphaIdeas: g.alphaN, beat: g.beat,
       seats: [...g.seats].sort().slice(0, 12), firstAt: g.first, lastAt: g.last,
     }))
-    // Best average return first; the hit rate breaks ties. Small samples are shown, and labelled by their count.
-    .sort((a, b) => b.avgReturnPct - a.avgReturnPct || b.hitRate - a.hitRate || b.ideas - a.ideas);
+    // Best average move net of the market first (rows without a benchmark fall back to the raw move); the hit rate
+    // breaks ties. Small samples are shown, and labelled by their count.
+    .sort((a, b) => (b.avgAlphaPct ?? b.avgReturnPct) - (a.avgAlphaPct ?? a.avgReturnPct) || b.hitRate - a.hitRate || b.ideas - a.ideas);
 }
 
 export function createLeague(opts: { file: string | null; session: () => IdeaRecord[]; now?: () => number; cacheMs?: number }) {

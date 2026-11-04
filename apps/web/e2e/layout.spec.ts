@@ -29,12 +29,13 @@ test("mobile: chat lines say who wrote them, and the markets tab has the news", 
 test("mobile: the markets tab shows the model league when core is running", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 800 });
   await page.route(/127\.0\.0\.1:4000\/league/, (r) => r.fulfill({ json: { scored: 30, source: "log+session", rows: [
-    { model: "openrouter-free:deepseek/deepseek-chat:free", ideas: 30, hits: 18, hitRate: 0.6, avgReturnPct: 0.08, seats: ["Quant / Signals"], firstAt: 1, lastAt: 2 },
+    { model: "openrouter-free:deepseek/deepseek-chat:free", ideas: 30, hits: 18, hitRate: 0.6, avgReturnPct: 0.08, avgAlphaPct: 0.05, beat: 17, alphaIdeas: 30, seats: ["Quant / Signals"], firstAt: 1, lastAt: 2 },
   ] } }));
   await page.routeWebSocket(/127\.0\.0\.1:4000\/agents/, (ws) => ws.send(JSON.stringify({ type: "lifecycle", agentId: "*", role: "floor", status: "running", ts: Date.now() })));
   await openDesk(page);
   await page.locator(".hz-mnav button", { hasText: "MARKETS" }).click();
   await expect(page.getByTestId("m-league-row")).toHaveCount(1);
   await expect(page.getByTestId("m-league-row")).toContainText("1. deepseek/deepseek-chat:free");
-  await expect(page.getByTestId("m-league-row")).toContainText("+0.080%");
+  await expect(page.getByTestId("m-league-row")).toContainText("+0.050%");
+  await expect(page.getByTestId("m-league-row")).toContainText("VS MARKET");
 });

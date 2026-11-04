@@ -14,13 +14,19 @@ const IdeaSchema = z.object({
   temperature: fin, autonomy: z.enum(['SUGGEST', 'APPROVE', 'AUTO']), symbol: z.string().max(32), side: z.enum(['BUY', 'SELL']),
   size: fin, confidence: fin, rationale: z.string().max(4000), price: fin, change24h: fin.nullable(), source: z.string().max(32),
   filled: z.boolean(),
-  outcome: z.object({ horizonMs: fin, exitPrice: fin, returnPct: fin, correct: z.boolean() }).nullable(),
+  outcome: z.object({
+    horizonMs: fin, exitPrice: fin, returnPct: fin, correct: z.boolean(),
+    benchmark: z.object({ symbol: z.string().max(32), returnPct: fin }).optional(), alphaPct: fin.optional(),
+  }).nullable(),
   expired: z.boolean().optional(),
+  fallback: z.boolean().optional(),
+  bench: z.object({ symbol: z.string().max(32), price: fin }).optional(),
 });
 const CardSchema = z.object({
   agentId: z.string().max(64), role: z.string().max(64), name: z.string().max(64), model: z.string().max(96),
   ideas: fin, holds: fin, scored: fin, hits: fin, hitRate: fin.nullable(), avgReturnPct: fin.nullable(), fills: fin, vetoes: fin,
   notional: fin, closes: fin, wins: fin, winRate: fin.nullable(), realized: fin, pnl: fin, peakPnl: fin, maxDrawdown: fin, updatedAt: fin,
+  alphaScored: fin.optional(), avgAlphaPct: fin.nullable().optional(),
 });
 export const SnapshotSchema = z.object({
   v: z.literal(1),

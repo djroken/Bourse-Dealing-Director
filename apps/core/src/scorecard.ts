@@ -27,6 +27,8 @@ export interface IdeaInput {
   source: string;
   /** The seat's model failed and the stub rule made this idea instead: it is not the model's idea. */
   fallback?: boolean;
+  /** The market it is measured against, and its price when the idea was made (BTC for coins, SPY for stocks). */
+  bench?: { symbol: string; price: number };
 }
 
 export interface IdeaOutcome {
@@ -35,6 +37,13 @@ export interface IdeaOutcome {
   /** Move in the idea's direction, in percent. Positive = the idea was right. */
   returnPct: number;
   correct: boolean;
+  /** What the benchmark did over the same window, and the idea's move net of it: did it beat just riding the market? */
+  benchmark?: { symbol: string; returnPct: number };
+  /**
+   * Move in the idea's direction minus the benchmark's move in that same direction. A long that made 1% while BTC made
+   * 3% scores -2%; a short on a coin that fell 5% while BTC fell 4% scores +1%. On the benchmark itself, the move vs cash.
+   */
+  alphaPct?: number;
 }
 
 export interface IdeaRecord extends IdeaInput {
@@ -71,6 +80,9 @@ export interface Scorecard {
   hitRate: number | null;
   /** Mean of the scored ideas' returnPct. */
   avgReturnPct: number | null;
+  /** Scored ideas that had a benchmark, and the mean of their alphaPct. Optional: older saved cards lack them. */
+  alphaScored?: number;
+  avgAlphaPct?: number | null;
   fills: number;
   vetoes: number;
   /** USD traded (sum of size x price over fills). */
@@ -95,6 +107,8 @@ export interface ScorebookOptions {
   maxIdeas?: number;
   /** Called once per idea when its outcome is known: the hook for persisting a training log. */
   onResolved?: (rec: IdeaRecord) => void;
+  /** The latest price of a symbol, for scoring against the benchmark. */
+  priceOf?: (symbol: string) => number | undefined;
 }
 
 /** A fill is matched to the newest unfilled idea from the same seat, symbol and side within this window. */
@@ -117,7 +131,7 @@ export function createScorebook(opts: ScorebookOptions = {}) {
     if (!c) {
       c = {
         agentId: a.agentId, role: a.role, name: a.name, model: a.model,
-        ideas: 0, holds: 0, scored: 0, hits: 0, hitRate: null, avgReturnPct: null,
+        ideas: 0, holds: 0, scored: 0, hits: 0, hitRate: null, avgReturnPct: null, alphaScored: 0, avgAlphaPct: null,
         fills: 0, vetoes: 0, notional: 0, closes: 0, wins: 0, winRate: null,
         realized: 0, pnl: 0, peakPnl: 0, maxDrawdown: 0, updatedAt: now(),
       };
@@ -214,8 +228,17 @@ export function createScorebook(opts: ScorebookOptions = {}) {
           r.expired = true; // the price now says nothing fair about the horizon
           continue;
         }
-        const move = ((price - r.price) / r.price) * 100 * (r.side === 'BUY' ? 1 : -1);
+        const dir = r.side === 'BUY' ? 1 : -1;
+        const move = ((price - r.price) / r.price) * 100 * dir;
         r.outcome = { horizonMs, exitPrice: price, returnPct: round(move, 4), correct: move > 0 };
+        if (r.bench) {
+          const bp = r.bench.symbol === r.symbol ? price : opts.priceOf?.(r.bench.symbol);
+          if (bp !== undefined && bp > 0 && Number.isFinite(bp) && r.bench.price > 0) {
+            const benchRet = ((bp - r.bench.price) / r.bench.price) * 100;
+            r.outcome.benchmark = { symbol: r.bench.symbol, returnPct: round(benchRet, 4) };
+            r.outcome.alphaPct = round(r.bench.symbol === r.symbol ? move : move - dir * benchRet, 4);
+          }
+        }
         const c = cards.get(r.agentId);
         if (c) {
           c.scored += 1;
@@ -224,6 +247,11 @@ export function createScorebook(opts: ScorebookOptions = {}) {
           returnSum.set(r.agentId, sum);
           c.hitRate = c.hits / c.scored;
           c.avgReturnPct = round(sum / c.scored, 4);
+          if (r.outcome.alphaPct !== undefined) {
+            const n = c.alphaScored ?? 0;
+            c.avgAlphaPct = round(((c.avgAlphaPct ?? 0) * n + r.outcome.alphaPct) / (n + 1), 4);
+            c.alphaScored = n + 1;
+          }
           touch(c);
         }
         done.push(r);

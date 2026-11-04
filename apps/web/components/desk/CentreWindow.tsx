@@ -74,7 +74,7 @@ function LeagueTable({ on }: { on: boolean }) {
       </div>
       {lv.rows.length > 0 && (
         <div className="hz-league-row hz-blotter-head">
-          <div>#</div><div>MODEL</div><div>IDEAS</div><div>HIT RATE</div><div>AVG MOVE</div><div>SEATS</div>
+          <div>#</div><div>MODEL</div><div>IDEAS</div><div>HIT RATE</div><div>AVG MOVE</div><div title="Average move net of the market (BTC for coins, SPY for stocks)">VS MARKET</div><div>SEATS</div>
         </div>
       )}
       {lv.rows.map((r) => (
@@ -87,6 +87,7 @@ function LeagueTable({ on }: { on: boolean }) {
           <div>{r.ideas}</div>
           <div style={{ color: r.hitColor }}>{r.hit}</div>
           <div style={{ color: r.avgColor }}>{r.avg}</div>
+          <div style={{ color: r.vsColor }} title={r.beat}>{r.vs}</div>
           <div className="hz-ellipsis" style={{ color: "var(--c8C97A2)" }} title={r.seats}>{r.seats}</div>
         </div>
       ))}

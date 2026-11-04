@@ -1725,7 +1725,7 @@ a:hover {
 @media (prefers-reduced-motion: reduce) { .hz-dots i { animation: none; opacity: 0.6; } }
 
 /* Model league (SCORES tab) */
-.hz-league-row { display: grid; grid-template-columns: 22px minmax(120px, 1.6fr) 52px 66px 74px minmax(80px, 1fr); align-items: center; column-gap: 8px; padding: 8px 14px; }
+.hz-league-row { display: grid; grid-template-columns: 22px minmax(110px, 1.6fr) 46px 62px 70px 74px minmax(60px, 1fr); align-items: center; column-gap: 8px; padding: 8px 14px; }
 .hz-league-row > div { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hz-league-row[data-small] { opacity: 0.72; }
 
