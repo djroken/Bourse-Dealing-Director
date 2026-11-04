@@ -113,7 +113,7 @@ describe('headlines on the floor', () => {
     await createTalk({ engine, now: () => NOW, intervalMs: 0, headlines: () => [...heads].sort((x, y) => y.publishedAt - x.publishedAt) }).runRound();
     const research = ws.of('chat').find((m) => m.role === 'Research / News')!;
     expect(research).toMatchObject({ stub: true });
-    expect(research.text).toBe('On the wire: "Solana whales move 2M SOL to exchanges" (CoinDesk, 0m ago). Names SOL-USDT. Unverified headline, not a signal on its own.');
+    expect(research.text).toBe('On the wire: "Solana whales move 2M SOL to exchanges" (CoinDesk, 0m ago). Names SOL-USDT. Worth a look: SOL-USDT. Unverified headline, not a signal on its own.');
     expect(String(ws.of('chat').find((m) => m.role === 'On-chain Analyst')!.text)).toMatch(/^On-chain: "Solana whales/);
     expect(ws.of('intent').filter((i) => /floor talk/.test(String(i.rationale)))).toHaveLength(0); // a headline is never an order
   });

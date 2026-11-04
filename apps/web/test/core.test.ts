@@ -306,6 +306,20 @@ describe("floor conversation", () => {
     think(true, 1_000);
     expect(buildView({ ...s, now: 100_000 }).chat.some((r) => r.kind === "thinking")).toBe(false); // a lost "off" expires
   });
+  it("a floor-talk line shows how the speaker feels, where they stand, Research's picks and who they answer", () => {
+    let s: DeskState = { ...base(), core: "live", seq: [] };
+    const add = (over: Record<string, unknown>) => (s = { ...s, ...applyCoreMsg(s, parseCoreMsg(chat(over))!)! });
+    add({ mood: "sceptical", stance: { symbol: "SOL-USDT", view: "BEAR", conviction: 0.6 }, replyTo: "Kite", round: "R1" });
+    add({ agentId: "TKT-005", role: roleOf("Sable"), name: "Sable", text: "Wire.", stub: true, mood: "unsure", picks: ["SOL-USDT", "BTC-USDT"], round: "R1" });
+    add({ mood: "furious", stance: { symbol: "SOL-USDT", view: "UP", conviction: 2 }, replyTo: "<b>x</b>", picks: ["bad sym!"], round: "R1" });
+    expect(AgentChatMsgSchema.safeParse(chat({ mood: "calm", stance: { symbol: "SOL-USDT", view: "FLAT", conviction: 0 }, picks: ["SOL-USDT"], replyTo: "Kite" })).success).toBe(true);
+    const rows = buildView(s).chat.filter((r) => r.kind === "msg");
+    expect(rows[0]).toMatchObject({ replyTo: "Kite" });
+    expect(rows[0]!.tags!.map((t) => t.label)).toEqual(["SCEPTICAL", "BEAR SOL 60%"]);
+    expect(rows[1]!.tags!.map((t) => t.label)).toEqual(["UNSURE", "PICKS SOL · BTC"]);
+    expect(rows[2]!.tags).toBeUndefined(); // nothing odd survives
+    expect(rows[2]!.replyTo).toBeUndefined();
+  });
   it("the owner's echoed words show as YOU; unknown seats are ignored", () => {
     const s = base();
     const p = applyCoreMsg(s, parseCoreMsg(chat({ agentId: "OWNER", role: "Owner", name: "YOU", text: "flatten SOL" }))!)!;

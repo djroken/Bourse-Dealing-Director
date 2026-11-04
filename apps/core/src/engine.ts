@@ -4,6 +4,17 @@ import type { AgentConfig, FloorMsg } from 'shared';
 import { applyFill, mark, newBook, type Book } from './book';
 import { isFreeModelId, type Advisor, type ModelUsage } from './models';
 import { DEFAULT_CRYPTO, type Instrument } from './instruments';
+
+/** What a floor-talk line carries besides its text. */
+export interface ChatMeta {
+  round?: string;
+  model?: string;
+  stub?: boolean;
+  mood?: 'confident' | 'excited' | 'calm' | 'cautious' | 'unsure' | 'sceptical' | 'worried';
+  stance?: { symbol: string; view: 'BULL' | 'BEAR' | 'FLAT'; conviction: number };
+  picks?: string[];
+  replyTo?: string;
+}
 import type { Venue, VenueResult } from './venues';
 import type { Headline } from './news';
 import { createScorebook, type IdeaRecord, type ScoreDump, type Scorecard } from './scorecard';
@@ -474,7 +485,7 @@ export function createEngine(opts: EngineOptions = {}) {
   const clean = (raw: string, max: number) => raw.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
 
   /** A seat (or the owner) says something in the floor conversation. No rate limit: core decides who speaks when. */
-  const speak = (who: { id: string; role: string; name: string }, raw: string, meta: { round?: string; model?: string; stub?: boolean } = {}): string | null => {
+  const speak = (who: { id: string; role: string; name: string }, raw: string, meta: ChatMeta = {}): string | null => {
     const text = clean(raw, 480);
     if (!text) return null;
     broadcast({ type: 'chat', agentId: who.id, role: who.role, name: who.name, text, ts: now(), ...meta });

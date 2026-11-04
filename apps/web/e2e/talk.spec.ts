@@ -18,8 +18,9 @@ test("the floor conversation: the owner's instruction goes to core, the agents' 
       line("OWNER", "Owner", "YOU", m.text, {});
       send({ type: "thinking", agentId: "TKT-003", role: "Market Maker", round: "T1", on: true, ts: t }); // still working on its line
       line("TKT-001", "Dealing Director", "Vega Ostrowski", "SOL is leading the tape. Pico, is it real?", { model: "ollama:llama3.2" });
-      line("TKT-004", "Quant / Signals", "Pico Nandra", "Momentum is clean, Vega. I'd buy a small clip.", { model: "ollama:llama3.2" });
-      line("TKT-007", "Risk Officer", "Bastion Cole", "No open risk on the floor. Every desk is inside its limits.", { stub: true });
+      line("TKT-004", "Quant / Signals", "Pico Nandra", "Momentum is clean, Vega. I'd buy a small clip.", { model: "ollama:llama3.2", mood: "confident", stance: { symbol: "SOL-USDT", view: "BULL", conviction: 0.8 } });
+      line("TKT-007", "Risk Officer", "Bastion Cole", "No open risk on the floor. Every desk is inside its limits.", { stub: true, mood: "calm" });
+      line("TKT-004", "Quant / Signals", "Pico Nandra", "Fair, Bastion. Still long, a bit less sure.", { model: "ollama:llama3.2", mood: "cautious", stance: { symbol: "SOL-USDT", view: "BULL", conviction: 0.6 }, replyTo: "Bastion" });
       send({ type: "intent", agentId: "TKT-004", role: "Quant / Signals", symbol: "SOL-USDT", side: "BUY", size: 2.5, confidence: 0.7, rationale: "ollama:llama3.2 in floor talk: Momentum is clean", needsApproval: true, ts: t });
       send({ type: "usage", agentId: "TKT-004", role: "Quant / Signals", callsToday: 3, tokensToday: 2_400, spendToday: 0, latencyMs: 920, ts: t });
     });
@@ -36,6 +37,10 @@ test("the floor conversation: the owner's instruction goes to core, the agents' 
   await expect(log).toContainText("SOL is leading the tape. Pico, is it real?");
   await expect(log).toContainText("Momentum is clean, Vega.");
   await expect(log).toContainText("STUB RULE");
+  // How they feel, where they stand, and who answers whom.
+  await expect(log.getByTestId("talk-tags").first()).toContainText("CONFIDENT");
+  await expect(log.getByTestId("talk-tags").first()).toContainText("BULL SOL 80%");
+  await expect(log.getByText("→ BASTION")).toBeVisible();
   await expect(log.getByRole("separator", { name: /FLOOR ROUND · \d\d:\d\d UTC · 3 speakers/ })).toHaveCount(1);
   await expect(log).toContainText("ollama:llama3.2");
   await expect(log).not.toContainText("Acknowledged. Routing that");

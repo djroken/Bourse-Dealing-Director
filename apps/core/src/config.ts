@@ -35,6 +35,8 @@ export interface CoreConfig {
   stocks?: string;
   /** Append every model call in a floor round to <dataDir>/talk.jsonl (prompt, reply, idea). Default on. */
   talkLog?: boolean;
+  /** Talk-it-out replies per floor round (BOURSE_TALK_REPLIES, 0-4, default 2). */
+  talkReplies?: number;
   /** Minutes between floor conversation rounds (BOURSE_TALK_MIN). 0 = only when the owner asks. Default 15. */
   talkMin?: number;
   /** Route owner-approved orders to a broker paper account instead of core's paper venue. Default: core's paper venue. */
@@ -114,6 +116,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     stocks: pick(env, 'BOURSE_STOCKS'),
     talkMin: talkOf(pick(env, 'BOURSE_TALK_MIN')),
     talkLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_TALK_LOG') ?? ''),
+    talkReplies: (() => {
+      const v = pick(env, 'BOURSE_TALK_REPLIES');
+      if (v === undefined) return 2;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > 4) throw new Error(`BOURSE_TALK_REPLIES must be 0 to 4, got "${v}"`);
+      return n;
+    })(),
     newsFeeds: parseFeedList(pick(env, 'BOURSE_NEWS_FEEDS')),
     venues: {
       stocks: venueOf(pick(env, 'BOURSE_VENUE_STOCKS'), 'BOURSE_VENUE_STOCKS', 'alpaca-paper'),

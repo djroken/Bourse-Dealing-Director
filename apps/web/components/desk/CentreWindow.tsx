@@ -39,11 +39,25 @@ export function ChatLine({ r }: { r: ChatRow }) {
   }
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <span style={m(10.5, "0.06em", r.tint, { fontWeight: 600 })}>{r.who}</span>
+        {r.replyTo && <span className="hz-replyto" title={`Answering ${r.replyTo}`}>→ {r.replyTo.toUpperCase()}</span>}
         <span style={m(9, "0.1em", "var(--c4E5862)")}>{r.role}</span>
       </div>
       <div style={{ fontSize: 13, lineHeight: 1.55, color: "var(--cC9D2DA)", marginTop: 3, textWrap: "pretty" }}>{r.text}</div>
+      <TalkTags r={r} />
+    </div>
+  );
+}
+
+/** Mood, stance and picks under a floor-talk line. */
+export function TalkTags({ r }: { r: ChatRow }) {
+  if (!r.tags) return null;
+  return (
+    <div className="hz-talktags" data-testid="talk-tags">
+      {r.tags.map((t) => (
+        <span key={t.key} className="hz-talktag" data-kind={t.key} title={t.title} style={{ color: t.color }}>{t.label}</span>
+      ))}
     </div>
   );
 }

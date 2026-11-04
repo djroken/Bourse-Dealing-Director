@@ -28,7 +28,14 @@ export interface SeqEvent {
   stub?: boolean;
   /** Core's conversation round this line belongs to: the chat draws a divider where a new round starts. */
   round?: string;
+  /** How the speaker says they feel, where they stand, Research's picks, and who a talk-it-out line answers. */
+  mood?: Mood;
+  stance?: { symbol: string; view: "BULL" | "BEAR" | "FLAT"; conviction: number };
+  picks?: string[];
+  replyTo?: string;
 }
+export const MOODS = ["confident", "excited", "calm", "cautious", "unsure", "sceptical", "worried"] as const;
+export type Mood = (typeof MOODS)[number];
 export interface Fill {
   side: Side;
   k: string;
