@@ -108,6 +108,11 @@ export interface EngineOptions {
    * checks: they think in floor rounds only. True restores background checks for them.
    */
   freeBackground?: boolean;
+  /**
+   * Let model seats on AUTO trade their own ideas on core's paper venue (never a broker, never real money), after the
+   * same risk gate as any order. Off: every model idea waits for the owner. Changeable at runtime (setModelAuto).
+   */
+  modelAuto?: boolean;
   log?: Logger;
   /** How long after an idea its outcome is scored. Default 15 minutes. */
   scoreHorizonMs?: number;
@@ -270,7 +275,7 @@ export function createEngine(opts: EngineOptions = {}) {
     lastEval.set(key, now());
 
     if (isModelSeat) {
-      // Model seats are suggest-only: whatever the model says, it ends at an intent a human can act on.
+      // A model's idea ends at an intent the owner acts on, unless the owner let model seats on AUTO trade on paper.
       inFlight.add(key);
       const modelId = agent.config.model;
       void advisor!
@@ -283,7 +288,9 @@ export function createEngine(opts: EngineOptions = {}) {
           const clip = agent.config.riskLimits.maxClip;
           if (res.ok) {
             const it = sizeIntent(res.view.side, res.view.confidence, clip, tick.price);
-            emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, `${modelId}: ${res.view.rationale}`);
+            const auto = modelTradesItself(agent) && it.side !== 'HOLD';
+            emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, `${modelId}: ${res.view.rationale}`, !auto);
+            if (auto && it.side !== 'HOLD') submitOrder(agent, symbol, it.side, it.size, `AUTO on paper · ${modelId}`);
           } else {
             log.warn(`model ${modelId} unavailable for ${agent.config.role}: ${res.reason}`);
             const m = momentumIntent(tick.change24h, clip, tick.price);
@@ -474,6 +481,10 @@ export function createEngine(opts: EngineOptions = {}) {
     return text;
   };
 
+  let modelAuto = !!opts.modelAuto;
+  /** A model seat set to AUTO, with model trading allowed: its ideas fill on the paper venue after the risk gate. */
+  const modelTradesItself = (a: FloorAgent): boolean => modelAuto && a.config.autonomy === 'AUTO' && !!advisor?.handles(a.config.model);
+
   /** Tell the Desk a seat is working on its line (so a slow model shows as thinking, not as silence). */
   const thinking = (a: FloorAgent, round: string, on: boolean): void => {
     broadcast({ type: 'thinking', agentId: a.id, role: a.config.role, round: round.slice(0, 32), on, ts: now() });
@@ -492,7 +503,9 @@ export function createEngine(opts: EngineOptions = {}) {
     if (tick.marketOpen === false) return { ok: false, reason: 'market closed' };
     const it = sizeIntent(side, confidence, agent.config.riskLimits.maxClip, tick.price);
     if (it.side === 'HOLD') return { ok: false, reason: 'too small to size' };
-    const ideaId = emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, clean(rationale, 240));
+    const auto = modelTradesItself(agent);
+    const ideaId = emitIntent(agent, symbol, tick, it.side, it.size, it.confidence, clean(rationale, 240), !auto);
+    if (auto) submitOrder(agent, symbol, it.side as 'BUY' | 'SELL', it.size, `AUTO on paper · ${agent.config.model} in floor talk`);
     return { ok: true, size: it.size, ideaId };
   };
 
@@ -559,6 +572,10 @@ export function createEngine(opts: EngineOptions = {}) {
   return {
     agents,
     postNews,
+    modelAuto: () => modelAuto,
+    setModelAuto: (on: boolean) => {
+      modelAuto = on;
+    },
     thinking,
 
     /** Called by the feed on every price tick. Only the symbol that moved is evaluated. */

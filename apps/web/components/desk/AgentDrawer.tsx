@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ALL_TOOLS, AUTONOMY, MODELS } from "@/lib/desk/data";
-import { customModelOk, fetchCatalog, keyLine, type ModelCatalog } from "@/lib/desk/models";
+import { autoNote, customModelOk, fetchCatalog, keyLine, setModelAuto, type ModelCatalog } from "@/lib/desk/models";
 import type { DeskActions } from "@/lib/desk/useDesk";
 import type { DeskView } from "@/lib/desk/view";
 import { m } from "./ui";
@@ -18,17 +18,8 @@ const STUB_LABELS = MODELS.filter((x) => !/^(ollama|openrouter|openrouter-free):
  * Model picker. With core connected it offers what can really run: OpenRouter's free models (live list) and the models
  * installed in Ollama, plus any id typed in. Without core, the simulated floor's labels.
  */
-function ModelPicker({ v, a, model }: { v: DeskView; a: DeskActions; model: string }) {
-  const [cat, setCat] = useState<ModelCatalog | null>(null);
+function ModelPicker({ v, a, model, cat }: { v: DeskView; a: DeskActions; model: string; cat: ModelCatalog | null }) {
   const [custom, setCustom] = useState("");
-  useEffect(() => {
-    if (!v.coreLive) return;
-    let live = true;
-    void fetchCatalog().then((c) => live && setCat(c));
-    return () => {
-      live = false;
-    };
-  }, [v.coreLive]);
   const known = new Set([...(cat?.free ?? []).map((x) => x.id), ...(cat?.ollama ?? []).map((x) => x.id), ...MODELS]);
   const key = keyLine(cat, model);
   const use = () => {
@@ -81,7 +72,46 @@ function ModelPicker({ v, a, model }: { v: DeskView; a: DeskActions; model: stri
   );
 }
 
+/** Core's model catalog and floor settings, while core is connected. */
+function useCatalog(on: boolean): [ModelCatalog | null, (c: ModelCatalog | null) => void] {
+  const [cat, setCat] = useState<ModelCatalog | null>(null);
+  useEffect(() => {
+    if (!on) return;
+    let live = true;
+    void fetchCatalog().then((c) => live && setCat(c));
+    return () => {
+      live = false;
+    };
+  }, [on]);
+  return [cat, setCat];
+}
+
+/** Under the autonomy buttons: what AUTO does for a model seat, and the switch that lets model seats paper-trade. */
+function AutoNote({ cat, setCat, model, autonomy }: { cat: ModelCatalog | null; setCat: (c: ModelCatalog | null) => void; model: string; autonomy: string }) {
+  const [busy, setBusy] = useState(false);
+  const note = autoNote(cat, model, autonomy);
+  if (!note || !cat) return null;
+  return (
+    <div data-testid="auto-note" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={m(9.5, undefined, note.on ? "var(--c3ECF8E)" : "var(--cFFB13D)", { lineHeight: 1.5 })}>{note.text}</div>
+      <button
+        className="hz-btn hz-btn--sm" disabled={busy} style={{ alignSelf: "flex-start" }}
+        onClick={() => {
+          setBusy(true);
+          void setModelAuto(!note.on).then((v) => {
+            setBusy(false);
+            if (v !== null) setCat({ ...cat, modelAuto: v });
+          });
+        }}
+      >
+        {note.on ? "BACK TO SUGGEST-ONLY" : "LET MODEL SEATS TRADE ON PAPER"}
+      </button>
+    </div>
+  );
+}
+
 export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
+  const [cat, setCat] = useCatalog(v.coreLive);
   const sel = v.sel;
   if (!sel) return null;
 
@@ -107,7 +137,7 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 18 }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
           <Label>MODEL</Label>
-          <ModelPicker v={v} a={a} model={sel.model} />
+          <ModelPicker v={v} a={a} model={sel.model} cat={cat} />
           <div style={m(9.5, undefined, "var(--c6B7681)", { lineHeight: 1.5 })}>
             ollama: runs locally and is free. openrouter-free: only accepts :free models. openrouter: takes any model and may cost money. Model seats suggest only; they never trade on their own.
           </div>
@@ -159,6 +189,7 @@ export default function AgentDrawer({ v, a }: { v: DeskView; a: DeskActions }) {
               <button key={o} className="hz-auto" data-on={sel.autonomy === o} onClick={() => a.patchSel({ autonomy: o })}>{o}</button>
             ))}
           </div>
+          <AutoNote cat={cat} setCat={setCat} model={sel.model} autonomy={sel.autonomy} />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>

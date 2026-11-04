@@ -93,7 +93,18 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
     const id = inst ? venueFor(inst.kind) : undefined;
     return id && venueOn[id] ? venues[id] : undefined;
   };
-  const engine = deps.engine ?? createEngine({ log, advisor, freeBackground: config.freeBackground, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments, route });
+  // Floor settings the owner changes from the Desk, kept across restarts. An env var, when set, wins at start-up.
+  const settingsFile = join(config.dataDir, 'settings.json');
+  const savedSettings = ((): { modelAuto?: boolean } => {
+    if (config.persist === false || !existsSync(settingsFile)) return {};
+    try {
+      const j: unknown = JSON.parse(readFileSync(settingsFile, 'utf8'));
+      return typeof j === 'object' && j !== null && typeof (j as { modelAuto?: unknown }).modelAuto === 'boolean' ? { modelAuto: (j as { modelAuto: boolean }).modelAuto } : {};
+    } catch {
+      return {};
+    }
+  })();
+  const engine = deps.engine ?? createEngine({ log, advisor, freeBackground: config.freeBackground, modelAuto: config.modelAuto ?? savedSettings.modelAuto ?? false, scoreHorizonMs: (config.scoreHorizonMin ?? 15) * 60_000, onIdeaResolved: logIdea, instruments: built.instruments, route });
   const instruments = engine.instruments();
   const stockSymbols = instruments.filter((i) => i.kind === 'stock').map((i) => i.symbol);
   const crypto = cryptoFeeds(instruments);
@@ -220,12 +231,30 @@ export function buildServer(config: CoreConfig, deps: ServerDeps = {}) {
   };
   server.all('/mcp', mcpHandler);
 
-  server.get('/models', async () => advisor.status());
+  server.get('/models', async () => ({ ...advisor.status(), modelAuto: engine.modelAuto() }));
+  /** Owner-changeable floor settings. modelAuto: model seats on AUTO may trade their own ideas on the paper venue. */
+  server.get('/floor/settings', async () => ({ modelAuto: engine.modelAuto() }));
+  server.put('/floor/settings', async (req, reply) => {
+    const body = z.object({ modelAuto: z.boolean() }).strict().safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'body must be { "modelAuto": true|false }' });
+    engine.setModelAuto(body.data.modelAuto);
+    server.log.info(`model seats on AUTO ${body.data.modelAuto ? 'may now trade on paper by themselves' : 'are back to suggesting only'}`);
+    if (config.persist !== false) {
+      try {
+        mkdirSync(config.dataDir, { recursive: true, mode: 0o700 });
+        writeFileSync(settingsFile, JSON.stringify({ modelAuto: body.data.modelAuto }), { mode: 0o600 });
+      } catch (err) {
+        server.log.warn(`could not save ${settingsFile}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+    return { modelAuto: engine.modelAuto() };
+  });
   const catalog = createCatalog({
     getJson: (url) => feedDeps.fetchJson(url),
     ollamaHost: config.ollamaHost,
     openrouterKeySet: () => advisor.status().openrouter.keySet,
     freeBudget: () => advisor.status().openrouter.free,
+    modelAuto: () => engine.modelAuto(),
   });
   /** What the Desk's model picker offers: OpenRouter's free models and what's installed in Ollama, plus whether core has the OpenRouter key. */
   server.get('/models/catalog', async () => catalog.get());

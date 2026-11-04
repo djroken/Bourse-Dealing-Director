@@ -195,6 +195,18 @@ test("the model picker lists core's free OpenRouter models, says when core has n
   await drawer.getByRole("button", { name: "USE", exact: true }).click();
   await expect.poll(() => cfgMsgs(core).some((m) => m.model === "openrouter-free:google/gemma-3-27b-it:free")).toBe(true);
 
+  // AUTO on a model seat: says it only suggests until allowed, and the switch tells core.
+  const puts: string[] = [];
+  await page.route(/127\.0\.0\.1:4000\/floor\/settings/, (r) => {
+    puts.push(r.request().postData() ?? "");
+    return r.fulfill({ json: { modelAuto: true } });
+  });
+  await drawer.getByRole("button", { name: "AUTO", exact: true }).click();
+  await expect(drawer.getByTestId("auto-note")).toContainText("only suggest");
+  await drawer.getByRole("button", { name: "LET MODEL SEATS TRADE ON PAPER" }).click();
+  await expect(drawer.getByTestId("auto-note")).toContainText("Play money only");
+  expect(puts).toEqual(['{"modelAuto":true}']);
+
   core.send({ type: "usage", agentId: "TKT-004", role: "Quant / Signals", callsToday: 0, tokensToday: 0, spendToday: 0, latencyMs: null, lastError: "no OpenRouter key: set one in Setup or OPENROUTER_API_KEY", ts: Date.now() });
   await expect(drawer.getByTestId("model-error")).toHaveText("Last call failed: no OpenRouter key: set one in Setup or OPENROUTER_API_KEY");
 });

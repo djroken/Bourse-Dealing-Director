@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { customModelOk, keyLine, parseCatalog } from "../lib/desk/models";
+import { autoNote, customModelOk, keyLine, parseCatalog } from "../lib/desk/models";
 import { applyCoreMsg, parseCoreMsg } from "../lib/desk/core";
 import { createInitialState } from "../lib/desk/state";
 import { SEED_AGENTS } from "../lib/desk/data";
@@ -13,7 +13,7 @@ const cat = (over: Record<string, unknown> = {}) => ({
 describe("model catalog from core", () => {
   it("keeps only free OpenRouter ids in the free list and well-formed Ollama ids", () => {
     expect(parseCatalog(cat())).toEqual({
-      openrouterKey: true, freeBudget: null, free: [{ id: "openrouter-free:deepseek/deepseek-chat:free", name: "DeepSeek V3 (free)" }], freeError: null,
+      modelAuto: false, openrouterKey: true, freeBudget: null, free: [{ id: "openrouter-free:deepseek/deepseek-chat:free", name: "DeepSeek V3 (free)" }], freeError: null,
       ollama: [{ id: "ollama:qwen2.5:0.5b", name: "qwen2.5:0.5b" }], ollamaUp: true,
     });
     expect(parseCatalog({})).toBeNull();
@@ -31,6 +31,14 @@ describe("model catalog from core", () => {
     expect(keyLine(c(12), "openrouter-free:x/y:free")!.text).toContain("Free calls today: 12 of 45");
     expect(keyLine(c(12), "openrouter:paid/model")!.text).toBe("OpenRouter key: found in core.");
     expect(keyLine(c(45), "openrouter-free:x/y:free")).toMatchObject({ ok: false, text: expect.stringContaining("used up (45 of 45)") });
+  });
+  it("AUTO on a model seat says plainly whether it trades on paper by itself", () => {
+    const off = parseCatalog(cat())!;
+    const on = parseCatalog(cat({ modelAuto: true }))!;
+    expect(autoNote(off, "ollama:qwen3", "AUTO")).toMatchObject({ on: false, text: expect.stringContaining("only suggest") });
+    expect(autoNote(on, "ollama:qwen3", "AUTO")).toMatchObject({ on: true, text: expect.stringContaining("Play money only") });
+    expect(autoNote(on, "ollama:qwen3", "SUGGEST")).toBeNull();
+    expect(autoNote(on, "gpt-5.1", "AUTO")).toBeNull(); // stub seats on AUTO already fill on paper
   });
   it("accepts custom ids only with a provider prefix", () => {
     expect(customModelOk("openrouter-free:google/gemma-3-27b-it:free")).toBe(true);

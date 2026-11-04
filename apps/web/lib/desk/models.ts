@@ -10,6 +10,8 @@ export interface PickModel {
   name: string;
 }
 export interface ModelCatalog {
+  /** Model seats on AUTO trade their own ideas on the paper venue. */
+  modelAuto: boolean;
   openrouterKey: boolean;
   /** Free-model calls today across all seats, and the daily budget (0 = no limit). */
   freeBudget: { used: number; cap: number } | null;
@@ -35,6 +37,7 @@ export function parseCatalog(raw: unknown): ModelCatalog | null {
   const l = raw.ollama;
   const b = isObj(o.budget) && typeof o.budget.used === "number" && typeof o.budget.cap === "number" && o.budget.used >= 0 && o.budget.cap >= 0 ? { used: o.budget.used, cap: o.budget.cap } : null;
   return {
+    modelAuto: raw.modelAuto === true,
     openrouterKey: o.keySet === true,
     freeBudget: b,
     free: list(o.free, "openrouter-free:", 200),
@@ -75,4 +78,23 @@ export function keyLine(cat: ModelCatalog | null, model: string): { text: string
     return cat.ollamaUp ? { ok: true, text: "Ollama: running on this machine." } : { ok: false, text: "Ollama isn't running on this machine, so this seat can't call the model." };
   }
   return null;
+}
+
+/** Turn "model seats on AUTO trade on paper by themselves" on or off in core. Returns the new value, or null. */
+export async function setModelAuto(on: boolean, f: typeof fetch = fetch, base: string = CORE_URL): Promise<boolean | null> {
+  try {
+    const r = await f(`${base}/floor/settings`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ modelAuto: on }) });
+    const j: unknown = r.ok ? await r.json() : null;
+    return isObj(j) && typeof j.modelAuto === "boolean" ? j.modelAuto : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What AUTO means for this seat, said plainly under the autonomy buttons. Null when there's nothing to add. */
+export function autoNote(cat: ModelCatalog | null, model: string, autonomy: string): { text: string; on: boolean } | null {
+  if (!cat || autonomy !== "AUTO" || !/^(ollama|openrouter|openrouter-free):/.test(model)) return null;
+  return cat.modelAuto
+    ? { on: true, text: "On AUTO this seat trades its own ideas on the paper book, after the risk gate. Play money only: never a broker, never live." }
+    : { on: false, text: "Model seats only suggest until you let them trade: each idea waits in your queue. Allow it to let AUTO model seats paper-trade by themselves (for every model seat)." };
 }
