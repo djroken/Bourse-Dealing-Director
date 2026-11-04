@@ -142,7 +142,7 @@ Found a security problem? See [SECURITY.md](SECURITY.md).
 - [x] Real model calls per agent: Ollama (local), OpenRouter (any model) and OpenRouter free. Suggest-only by default, behind the same risk gate
 - [x] Opt-in: model seats on AUTO paper-trade their own ideas, so a floor can train unattended
 - [x] Lessons: after its ideas are scored, a model seat writes itself a note it reads before its next calls
-- [ ] Score ideas against the market (alpha), not just up or down
+- [x] Score ideas against the market (alpha), not just up or down
 - [ ] Bull vs bear debate before large ideas
 - [ ] US company fundamentals from SEC EDGAR for the Research seat
 - [ ] Anthropic, OpenAI and Gemini adapters

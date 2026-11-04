@@ -178,7 +178,14 @@ export function createEngine(opts: EngineOptions = {}) {
     dailyPnL: 0,
     book: newBook(),
   }));
-  const scores = createScorebook({ now, horizonMs: opts.scoreHorizonMs, onResolved: opts.onIdeaResolved });
+  const scores = createScorebook({ now, horizonMs: opts.scoreHorizonMs, onResolved: opts.onIdeaResolved, priceOf: (s) => lastTick.get(s)?.price });
+  /** The market an idea is measured against: BTC for coins, SPY for stocks, when they're on the floor and priced. */
+  const benchFor = (symbol: string): { bench?: { symbol: string; price: number } } => {
+    const inst = bySymbol.get(symbol);
+    const b = inst?.kind === 'stock' ? 'SPY' : 'BTC-USDT';
+    const t = lastTick.get(b);
+    return t && t.price > 0 ? { bench: { symbol: b, price: t.price } } : {};
+  };
   const ident = (a: FloorAgent) => ({ agentId: a.id, role: a.config.role, name: a.config.name, model: a.config.model });
   /** What was last broadcast per seat. Seeded at creation: clients get every card on connect, so only changes go out after that. */
   const scoreSent = new Map<string, { at: number; stamp: number }>();
@@ -263,6 +270,7 @@ export function createEngine(opts: EngineOptions = {}) {
       ideaId = scores.idea({
         ...ident(agent), temperature: agent.config.temperature, autonomy: agent.config.autonomy, symbol, side, size, confidence, rationale,
         price: tick.price, change24h: tick.change24h, source: tick.source, ...(fallback ? { fallback: true } : {}),
+        ...benchFor(symbol),
       });
     }
     broadcast({ type: 'intent', agentId: agent.id, role: agent.config.role, symbol, side, size, confidence, rationale, needsApproval: side !== 'HOLD' && needsApproval, ts: now() });

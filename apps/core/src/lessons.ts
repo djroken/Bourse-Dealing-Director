@@ -117,7 +117,8 @@ export function createLessons(opts: LessonsOptions) {
       ...recs.map((r) => {
         const o = r.outcome!;
         return `- ${hhmm(r.ts)} ${r.side} ${r.symbol} @ ${fmt(r.price)}, confidence ${Math.round(r.confidence * 100)}%, because: "${clean(r.rationale, 160).replace(/"/g, "'")}". ` +
-          `Then ${fmt(o.exitPrice)}: ${o.returnPct >= 0 ? '+' : ''}${o.returnPct.toFixed(2)}% in your direction (${o.correct ? 'right' : 'wrong'}).`;
+          `Then ${fmt(o.exitPrice)}: ${o.returnPct >= 0 ? '+' : ''}${o.returnPct.toFixed(2)}% in your direction (${o.correct ? 'right' : 'wrong'})` +
+          (o.alphaPct !== undefined && o.benchmark ? `; ${o.alphaPct >= 0 ? '+' : ''}${o.alphaPct.toFixed(2)}% against just holding ${o.benchmark.symbol.replace('-USDT', '')}` : '') + '.';
       }),
       notesFor(a.id).length ? `Your earlier notes (your own words): ${notesFor(a.id).map((n) => `"${n.replace(/"/g, "'")}"`).join(' ')}` : '',
     ].filter(Boolean).join('\n');

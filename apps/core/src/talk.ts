@@ -245,6 +245,10 @@ export function createTalk(opts: TalkOptions) {
     ];
   };
 
+  /** ", +0.40% vs BTC" when the idea was measured against the market. */
+  const vsMarket = (o: { alphaPct?: number; benchmark?: { symbol: string } }): string =>
+    o.alphaPct === undefined || !o.benchmark ? '' : `, ${o.alphaPct >= 0 ? '+' : ''}${o.alphaPct.toFixed(2)}% vs ${o.benchmark.symbol.replace('-USDT', '')}`;
+
   /** A trading seat's own recent ideas and how they turned out: the feedback that lets an agent learn on the floor. */
   const trackLines = (a: FloorAgent): string[] => {
     if (!a.config.trades) return [];
@@ -254,7 +258,7 @@ export function createTalk(opts: TalkOptions) {
     const fmtPx = (p: number) => p.toLocaleString('en-US', { maximumFractionDigits: p < 10 ? 4 : 2 });
     return [
       `Your recent ideas and how they did (scored ${Math.round(engine.scoreHorizonMs / 60_000)} minutes later):`,
-      ...mine.map((i) => `- ${hhmm(i.ts)} ${i.side} ${i.symbol} @ ${fmtPx(i.price)}: ${i.outcome ? `${i.outcome.returnPct >= 0 ? '+' : ''}${i.outcome.returnPct.toFixed(2)}% (${i.outcome.correct ? 'right' : 'wrong'})` : 'not scored yet'}`),
+      ...mine.map((i) => `- ${hhmm(i.ts)} ${i.side} ${i.symbol} @ ${fmtPx(i.price)}: ${i.outcome ? `${i.outcome.returnPct >= 0 ? '+' : ''}${i.outcome.returnPct.toFixed(2)}% (${i.outcome.correct ? 'right' : 'wrong'})${vsMarket(i.outcome)}` : 'not scored yet'}`),
       ...(card && card.scored ? [`Hit rate so far: ${card.hits}/${card.scored} (${Math.round((card.hitRate ?? 0) * 100)}%).`] : []),
     ];
   };

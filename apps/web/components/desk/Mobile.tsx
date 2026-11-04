@@ -25,7 +25,10 @@ function MobileLeague({ on }: { on: boolean }) {
             <span className="hz-ellipsis" style={m(12, undefined, "var(--cE6EAEE)", { whiteSpace: "nowrap" })}>{r.rank}. {r.model}</span>
             <span className="hz-ellipsis" style={m(9.5, undefined, "var(--c6B7681)", { whiteSpace: "nowrap" })}>{r.kind} · {r.ideas} ideas · HIT <span style={{ color: r.hitColor }}>{r.hit}</span></span>
           </div>
-          <span style={m(12.5, undefined, r.avgColor, { flex: "none" })}>{r.avg}</span>
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", flex: "none", gap: 3 }}>
+            <span style={m(12.5, undefined, r.vsColor)}>{r.vs}</span>
+            <span style={m(8.5, "0.1em", "var(--c5D6873)")}>VS MARKET</span>
+          </span>
         </div>
       ))}
     </>
