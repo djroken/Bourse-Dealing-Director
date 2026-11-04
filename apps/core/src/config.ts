@@ -21,6 +21,8 @@ export interface CoreConfig {
   freeDailyCap?: number;
   /** Let free-model seats also make background market checks (BOURSE_FREE_BACKGROUND). Off: they think in floor rounds only. */
   freeBackground?: boolean;
+  /** BOURSE_MODEL_AUTO=paper: model seats on AUTO trade their own ideas on the paper venue. Unset: the saved setting. */
+  modelAuto?: boolean;
   /** Append every scored idea to <dataDir>/ideas.jsonl, a training/eval log that survives restarts. Default on. */
   ideaLog?: boolean;
   /** Minutes after an idea that its outcome is measured. Default 15. */
@@ -104,6 +106,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): CoreConfig {
     modelDailyCap: { ollama: capOf(env.OLLAMA_DAILY_CAP, 0), openrouter: capOf(env.OPENROUTER_DAILY_CAP, 200) },
     freeDailyCap: capOf(env.OPENROUTER_FREE_DAILY_CAP, 45),
     freeBackground: /^(1|on|true|yes)$/i.test(pick(env, 'BOURSE_FREE_BACKGROUND') ?? ''),
+    ...(pick(env, 'BOURSE_MODEL_AUTO') !== undefined ? { modelAuto: /^(paper|1|on|true|yes)$/i.test(pick(env, 'BOURSE_MODEL_AUTO')!) } : {}),
     ideaLog: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_IDEA_LOG') ?? ''),
     scoreHorizonMin: horizonOf(pick(env, 'BOURSE_SCORE_HORIZON_MIN')),
     persist: !/^(0|off|false|no)$/i.test(pick(env, 'BOURSE_PERSIST') ?? ''),

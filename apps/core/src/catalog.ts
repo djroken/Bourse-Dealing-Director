@@ -14,6 +14,8 @@ export interface CatalogModel {
 export interface Catalog {
   openrouter: { keySet: boolean; free: CatalogModel[]; error: string | null; fetchedAt: number; budget: { used: number; cap: number } | null };
   ollama: { host: string; reachable: boolean; models: CatalogModel[] };
+  /** Whether model seats on AUTO trade on paper by themselves. */
+  modelAuto: boolean;
 }
 
 type GetJson = (url: string) => Promise<unknown>;
@@ -44,7 +46,7 @@ export function parseOllamaTags(body: unknown): CatalogModel[] {
     .slice(0, 100);
 }
 
-export function createCatalog(opts: { getJson: GetJson; ollamaHost: string; openrouterKeySet: () => boolean; freeBudget?: () => { used: number; cap: number } | undefined; now?: () => number; ttlMs?: number }) {
+export function createCatalog(opts: { getJson: GetJson; ollamaHost: string; openrouterKeySet: () => boolean; freeBudget?: () => { used: number; cap: number } | undefined; modelAuto?: () => boolean; now?: () => number; ttlMs?: number }) {
   const now = opts.now ?? Date.now;
   const ttl = opts.ttlMs ?? 60 * 60_000;
   let free: { list: CatalogModel[]; at: number; error: string | null } = { list: [], at: 0, error: null };
@@ -89,6 +91,7 @@ export function createCatalog(opts: { getJson: GetJson; ollamaHost: string; open
       return {
         openrouter: { keySet: opts.openrouterKeySet(), free: free.list, error: free.error, fetchedAt: free.at, budget: opts.freeBudget?.() ?? null },
         ollama: { host, reachable, models: ollama },
+        modelAuto: opts.modelAuto?.() ?? false,
       };
     },
   };
